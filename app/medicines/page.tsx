@@ -1,0 +1,113 @@
+// app/medicines/page.tsx
+"use client";
+
+import { usePublicMedicines } from "@/hooks/usePublicMedicines";
+import { GuestAddressModal } from "@/components/features/inventory/GuestAddressModal";
+import { Spinner } from "@/components/ui/Spinner";
+import { Search, Pill, MapPin, Store } from "lucide-react";
+
+export default function PublicMedicinesPage() {
+  const {
+    medicines,
+    loading,
+    search,
+    setSearch,
+    city,
+    setCity,
+    pincode,
+    setPincode,
+    showAddressModal,
+    setShowAddressModal,
+    handleSaveGuestAddress,
+  } = usePublicMedicines();
+
+  return (
+    <div className="min-h-screen bg-zinc-50 pt-24 pb-16 px-4 sm:px-6 lg:px-20">
+      <GuestAddressModal
+        isOpen={showAddressModal}
+        onClose={() => setShowAddressModal(false)}
+        onSave={handleSaveGuestAddress}
+      />
+
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-900">Explore Medicines & Inventory</h1>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-1">
+              Search across available salt compositions, generics, and retail stocks instantly by location.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAddressModal(true)}
+            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#2a9d8f] bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors cursor-pointer shrink-0"
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            {pincode || city ? `${city}${city && pincode ? ", " : ""}${pincode}` : "Set Location"}
+          </button>
+        </div>
+
+        <div className="bg-white p-3 rounded-lg border border-zinc-200 shadow-xs flex items-center gap-3 md:col-span-1">
+          <Search className="w-5 h-5 text-zinc-400 shrink-0" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search medicines..."
+            className="w-full text-xs sm:text-sm bg-transparent focus:outline-none text-zinc-800 placeholder:text-zinc-400"
+          />
+        </div>
+
+        {loading ? (
+          <Spinner text="Searching medicines..." />
+        ) : medicines.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-lg border border-zinc-200">
+            <Pill className="w-10 h-10 mx-auto text-zinc-300 mb-2" />
+            <p className="text-sm font-semibold text-zinc-700">No medicines found</p>
+            <p className="text-xs text-zinc-400 mt-1">Try searching with a different keyword or location.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border border-zinc-200 divide-y divide-zinc-100 shadow-xs">
+            {medicines.map((med) => (
+              <div
+                key={med.id}
+                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-50/50 transition-colors"
+              >
+                <div className="space-y-1">
+                  <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
+                    <Pill className="w-4 h-4 text-teal-600 shrink-0" />
+                    {med.description}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+                    <span className="flex items-center gap-1 font-medium text-zinc-700">
+                      <Store className="w-3.5 h-3.5 text-zinc-400" />
+                      {med.shop_name || "Medical Store"}
+                    </span>
+                    {med.shop_address && (
+                      <a href={med.shop_location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-500 hover:text-teal-600 transition-colors">
+                        <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                        {med.shop_address}
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-100">
+                  <span className="font-bold text-teal-700 bg-teal-50 px-3 py-1 rounded-md text-xs">
+                    ₹{med.mrp}
+                  </span>
+                  <span
+                    className={`text-xs font-semibold ${med.quantity > 0 ? "text-emerald-700" : "text-red-600"
+                      }`}
+                  >
+                    {med.quantity > 0 ? `${med.quantity} in stock` : "Out of stock"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
