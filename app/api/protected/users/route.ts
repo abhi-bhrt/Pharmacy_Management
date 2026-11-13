@@ -1,7 +1,7 @@
 import { findUserByCriteria } from "@/services/users";
 import { withApiHandler, sendSuccess } from "@/lib/api/api-handler";
 import { AppError } from "@/lib/api/app-error";
-import type { UserWithPassword } from "@/types";
+import type { UserProfileResponse } from "@/types";
 
 export const GET = withApiHandler(async (req: Request) => {
   const url = new URL(req.url);
@@ -21,5 +21,5 @@ export const GET = withApiHandler(async (req: Request) => {
     throw AppError.notFound("User not found");
   }
 
-  return sendSuccess<{ user: UserWithPassword }>({ user });
+  return sendSuccess<{ user: UserProfileResponse }>({ user });
 });
