@@ -48,7 +48,13 @@ async function executeCreateShop(
     `INSERT INTO addresses (pincode, state, country, district, area)
      VALUES ($1, $2, COALESCE($3, 'IN'), $4, $5)
      RETURNING id, pincode, state, country, district, area, created_at, updated_at`,
-    [address.pincode.trim(), address.state.trim(), address.country ?? "IN", address.district.trim(), address.area.trim()]
+    [
+      address.pincode.trim(),
+      address.state.trim(),
+      address.country ?? "IN",
+      address.district.trim(),
+      address.area.trim(),
+    ]
   );
   const shopAddress = addressRes.rows[0];
 
@@ -61,17 +67,17 @@ async function executeCreateShop(
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING *`,
     [
-      shopName.trim(),
-      phone.trim(),
-      email.toLowerCase().trim(),
-      drugLicenceNumber.trim(),
-      pharmacistName.trim(),
-      pharmacistRegistrationNumber.trim(),
-      gstin.trim(),
-      location.trim(),
-      ownerId,
-      shopAddress.id,
-      imageId,
+      shopName.trim(),                      // $1: shop_name
+      phone.trim(),                         // $2: phone
+      email.toLowerCase().trim(),           // $3: email
+      drugLicenceNumber.trim(),             // $4: drug_licence_number
+      pharmacistName.trim(),                // $5: pharmacist_name
+      pharmacistRegistrationNumber.trim(),  // $6: pharmacist_registration_number
+      gstin.trim(),                         // $7: gstin
+      ownerId,                              // $8: owner_id (UUID)
+      shopAddress.id,                       // $9: address_id (UUID)
+      imageId || null,                      // $10: image_id
+      location?.trim() || null,             // $11: location
     ]
   );
 

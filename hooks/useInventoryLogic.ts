@@ -16,7 +16,7 @@ export function useInventoryLogic() {
     gstRate: "",
     expDate: "",
     quantity: "",
-    hsnCode: "3001",
+    hsnCode: "3004",
     packSize: "",
   });
 
@@ -33,7 +33,7 @@ export function useInventoryLogic() {
       gstRate: "",
       expDate: "",
       quantity: "",
-      hsnCode: "3001",
+      hsnCode: "3004",
       packSize: "",
     });
     setIsModalOpen(true);
@@ -50,19 +50,19 @@ export function useInventoryLogic() {
           body: JSON.stringify({
             description: item.description,
             batchNo: item.batchNo,
-            hsnCode: item.hsnCode,
+            hsnCode: item.hsnCode || "3004",
             mrp: parseFloat(item.mrp) || 0,
             rate: parseFloat(item.rate) || 0,
-            gstRate: parseFloat(item.gstRate) || 0,
+            gstRate: parseFloat(item.gstRate) || 5,
             quantity: parseInt(item.quantity, 10) || 1,
-            packSize: item.packSize || "10s",
+            packSize: item.packSize || "10S",
             expDate: item.expDate,
           }),
         });
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          console.error("Failed to save item:", item.description);
+          console.error("Failed to save item:", item.description, data.error);
         }
       }
       refresh();

@@ -95,8 +95,9 @@ export function InventoryView({
           <h1 className="text-xl font-bold text-zinc-900">Inventory & Medicines</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsScanModalOpen(true)}>
-            <ScanLine className="w-4 h-4 mr-2" /> Scan Bill / Image
+          <Button variant="outline" onClick={() => setIsScanModalOpen(true)} disabled={submitting}>
+            <ScanLine className="w-4 h-4 mr-2" />
+            {submitting ? "Saving Scanned Items..." : "Scan Bill / Image"}
           </Button>
           <Button onClick={handleOpenCreate}>
             <Plus className="w-4 h-4 mr-2" /> Add Medicine
@@ -115,7 +116,7 @@ export function InventoryView({
             }`}
           >
             <AlertTriangle className={`w-4 h-4 ${activeFilter === "expiring" ? "text-white" : "text-amber-600"}`} />
-            <span>Expiring Soon (&lt; 3 Months): {processedMedicines.filter(m => m.isExpiringSoon).length}</span>
+            <span>Expiring Soon (&lt; 3 Months): {processedMedicines.filter((m) => m.isExpiringSoon).length}</span>
           </button>
 
           <button
@@ -127,7 +128,7 @@ export function InventoryView({
             }`}
           >
             <AlertTriangle className={`w-4 h-4 ${activeFilter === "lowStock" ? "text-white" : "text-red-600"}`} />
-            <span>Low Stock (≤ 10): {processedMedicines.filter(m => m.isLowStock).length}</span>
+            <span>Low Stock (≤ 10): {processedMedicines.filter((m) => m.isLowStock).length}</span>
           </button>
 
           {activeFilter !== "all" && (
@@ -157,10 +158,10 @@ export function InventoryView({
       {loading ? (
         <Spinner text="Loading inventory..." />
       ) : (
-        <MedicinesTable 
-          medicines={filteredMedicines} 
-          onEdit={handleOpenEdit} 
-          onDelete={handleDelete} 
+        <MedicinesTable
+          medicines={filteredMedicines}
+          onEdit={handleOpenEdit}
+          onDelete={handleDelete}
         />
       )}
 
@@ -241,7 +242,7 @@ export function InventoryView({
               required
               value={form.packSize}
               onChange={(e) => setForm({ ...form, packSize: e.target.value })}
-              placeholder="10s"
+              placeholder="10S"
             />
             <Input
               label="Expiry Date *"
