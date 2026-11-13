@@ -95,7 +95,7 @@ export function InventoryView({
           <h1 className="text-xl font-bold text-zinc-900">Inventory & Medicines</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsScanModalOpen(true)} disabled={submitting}>
+          <Button variant="outline" onClick={() => setIsScanModalOpen(true)} disabled>
             <ScanLine className="w-4 h-4 mr-2" />
             {submitting ? "Saving Scanned Items..." : "Scan Bill / Image"}
           </Button>
