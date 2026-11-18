@@ -2,16 +2,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuthStore, type UserAddress } from "@/store/useAuthStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useDebounce } from "@/hooks/useDebounce";
+import type { AddressInput, PublicMedicineResponse } from "@/types";
 
 export function usePublicMedicines() {
   const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.loading);
+  const hasHydrated = useAuthStore((state) => state._hasHydrated);
   const guestAddress = useAuthStore((state) => state.guestAddress);
   const setGuestAddress = useAuthStore((state) => state.setGuestAddress);
 
-  const [medicines, setMedicines] = useState<any[]>([]);
+  const [medicines, setMedicines] = useState<PublicMedicineResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
@@ -24,68 +26,78 @@ export function usePublicMedicines() {
   const debouncedPincode = useDebounce(pincode, 400);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!hasHydrated || authLoading) return;
 
-    if (user?.address) {
-      setCity(user.address.district || user.address.area || "");
-      setPincode(user.address.pincode || "");
+    const activeAddress = user?.address || guestAddress;
+    const hasValidLocation = Boolean(
+      activeAddress?.pincode?.trim() ||
+      activeAddress?.district?.trim() ||
+      activeAddress?.area?.trim()
+    );
+
+    if (hasValidLocation && activeAddress) {
+      setCity(activeAddress.district || activeAddress.area || "");
+      setPincode(activeAddress.pincode || "");
       setShowAddressModal(false);
-      setHasInitializedLocation(true);
-      return;
-    }
-
-    if (user && !user.address) {
-      setHasInitializedLocation(true);
-      return;
-    }
-
-    const storedGuest = sessionStorage.getItem("guest_address");
-    const activeGuest: UserAddress | null =
-      guestAddress || (storedGuest ? JSON.parse(storedGuest) : null);
-
-    if (activeGuest && (activeGuest.pincode || activeGuest.district || activeGuest.area)) {
-      if (!guestAddress) setGuestAddress(activeGuest);
-      setCity(activeGuest.district || activeGuest.area || "");
-      setPincode(activeGuest.pincode || "");
-      setShowAddressModal(false);
-    } else {
+    } else if (!hasInitializedLocation) {
       setShowAddressModal(true);
     }
-    setHasInitializedLocation(true);
-  }, [user, authLoading, guestAddress, setGuestAddress]);
 
-  const handleSaveGuestAddress = (address: UserAddress) => {
-    setGuestAddress(address);
-    setCity(address.district || address.area || "");
-    setPincode(address.pincode || "");
+    setHasInitializedLocation(true);
+  }, [hasHydrated, authLoading, user, guestAddress, hasInitializedLocation]);
+
+  const handleSaveGuestAddress = (address: AddressInput) => {
+    const normalizedAddress: AddressInput = {
+      pincode: address.pincode?.trim() || "",
+      state: address.state?.trim() || "",
+      district: address.district?.trim() || "",
+      area: address.area?.trim() || "",
+      country: address.country || "IN",
+    };
+
+    setGuestAddress(normalizedAddress);
+    setCity(normalizedAddress.district || normalizedAddress.area || "");
+    setPincode(normalizedAddress.pincode || "");
     setShowAddressModal(false);
   };
 
   useEffect(() => {
     if (!hasInitializedLocation) return;
 
+    let isMounted = true;
+
     async function fetchMedicines() {
+      setLoading(true);
       try {
-        setLoading(true);
         const params = new URLSearchParams();
-        if (debouncedSearch) params.append("search", debouncedSearch);
-        if (debouncedCity) params.append("city", debouncedCity);
-        if (debouncedPincode) params.append("pincode", debouncedPincode);
-        params.append("limit", "20");
+        if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+        if (debouncedCity.trim()) params.set("city", debouncedCity.trim());
+        if (debouncedPincode.trim()) params.set("pincode", debouncedPincode.trim());
+        params.set("limit", "20");
 
         const res = await fetch(`/api/medicines?${params.toString()}`);
         const data = await res.json();
-        if (res.ok && data.success) {
-          setMedicines(data.data.medicines || []);
+
+        if (isMounted) {
+          if (res.ok && data?.success) {
+            setMedicines(data.data?.medicines || []);
+          } else {
+            setMedicines([]);
+          }
         }
       } catch (err) {
         console.error("Failed to fetch medicines:", err);
+        if (isMounted) setMedicines([]);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     fetchMedicines();
+
+    return () => {
+      isMounted = false;
+    };
   }, [debouncedSearch, debouncedCity, debouncedPincode, hasInitializedLocation]);
 
   return {

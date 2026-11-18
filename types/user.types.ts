@@ -1,11 +1,9 @@
+// types/user.types.ts
 import type { Address, AddressInput, BaseEntity, UpdateAddressInput } from "./common.types";
 
 export type UserRole = "CUSTOMER" | "PHARMACIST" | "ADMIN" | "SUPERADMIN";
 export type UserStatus = "ACTIVE" | "DEACTIVATED" | "SUSPENDED";
 
-/**
- * Core User database entity.
- */
 export interface User extends BaseEntity {
   name: string;
   email: string;
@@ -16,72 +14,44 @@ export interface User extends BaseEntity {
   address_id: string | null;
 }
 
-/**
- * Public-safe user profile returned by API endpoints (includes joined address).
- */
-export interface UserProfileResponse extends Omit<User, "address_id"> {
-  address?: Address | null;
+export interface UserWithPassword extends User {
+  password: string;
 }
 
-/**
- * JWT Session payload encoded inside HTTP-only auth cookies.
- */
+export interface UserProfileResponse extends Omit<User, "address_id"> {
+  address: Address | null;
+}
+
+export interface AuthResponse {
+  user: UserProfileResponse;
+  token: string;
+}
+
 export interface SessionPayload {
   userId: string;
   email: string;
-  role?: UserRole;
+  role: UserRole;
 }
 
-/**
- * Input payload for user registration (Sign Up).
- */
-export interface CreateUserInput {
+export type SignInInput = Pick<UserWithPassword, "email" | "password">;
+
+export type VerifyCredentialsRow = Pick<UserWithPassword, "id" | "email" | "password" | "role">;
+
+export interface CreateUserInput extends SignInInput {
   name: string;
-  email: string;
   mobNo: string;
-  password: string;
   role?: UserRole;
   address?: AddressInput;
 }
 
-/**
- * Input payload for user login (Sign In).
- */
-export interface SignInInput {
-  email: string;
-  password: string;
-}
-
-/**
- * Input payload for updating user profile or status.
- */
-export interface UpdateUserInput {
-  name?: string;
-  mobNo?: string;
-  password?: string;
-  role?: UserRole;
+export interface UpdateUserInput extends Partial<Omit<CreateUserInput, "email" | "address">> {
   status?: UserStatus;
   isProfileComplete?: boolean;
   address?: UpdateAddressInput;
 }
 
-/**
- * Criteria for finding a user in the database.
- */
-
 export interface FindUserCriteria {
   id?: string;
   email?: string;
   mobNo?: string;
-}
-
-/**
- * Input payload for verifying user credentials during authentication.
- */
-
-export interface VerifyCredentialsInput {
-  id: string;
-  email: string;
-  password: string;
-  role: UserRole;
 }

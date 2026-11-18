@@ -1,7 +1,5 @@
-import {
-  getShopIdByOwner,
-  getMedicineByIdService
-} from "@/services/medicines";
+// app/api/medicines/[id]/route.ts
+import { getShopIdByOwner, getMedicineByIdService } from "@/services/medicines";
 import { withApiHandler, sendSuccess } from "@/lib/api/api-handler";
 import { AppError } from "@/lib/api/app-error";
 import type { Medicine } from "@/types";
@@ -20,7 +18,7 @@ export const GET = withApiHandler(
     const shopId = await getShopIdByOwner(userId);
     const { id } = await params;
 
-    const medicine: Medicine = await getMedicineByIdService(id, shopId);
+    const medicine = await getMedicineByIdService(id, shopId);
     return sendSuccess<{ medicine: Medicine }>({ medicine });
   }
 );

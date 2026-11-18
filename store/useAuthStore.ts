@@ -1,69 +1,68 @@
 // store/useAuthStore.ts
 import { create } from "zustand";
-
-export interface UserAddress {
-  area?: string;
-  district?: string;
-  state?: string;
-  pincode?: string;
-  country?: string;
-}
-
-export interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  mob_no: string;
-  role?: string;
-  status?: string;
-  is_profile_complete?: boolean;
-  address?: UserAddress;
-}
+import { persist, createJSONStorage } from "zustand/middleware";
+import type { UserProfileResponse, AddressInput } from "@/types";
 
 interface AuthState {
   isAdmin: boolean;
-  user: UserProfile | null;
-  guestAddress: UserAddress | null;
+  user: UserProfileResponse | null;
+  guestAddress: AddressInput | null;
   loading: boolean;
-  setAuth: (user: UserProfile | null) => void;
-  setGuestAddress: (address: UserAddress | null) => void;
+  _hasHydrated: boolean;
+  setAuth: (user: UserProfileResponse | null) => void;
+  setGuestAddress: (address: AddressInput | null) => void;
   clearAuth: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   setLoading: (loading: boolean) => void;
+  setHasHydrated: (state: boolean) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  isAdmin: false,
-  user: null,
-  guestAddress: null,
-  loading: true,
-  setAuth: (user) => {
-    if (user) {
-      sessionStorage.setItem("auth_user", JSON.stringify(user));
-    } else {
-      sessionStorage.removeItem("auth_user");
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      isAdmin: false,
+      user: null,
+      guestAddress: null,
+      loading: true,
+      _hasHydrated: false,
+      setAuth: (user) =>
+        set({
+          user,
+          isAdmin: user?.role === "ADMIN" || user?.role === "SUPERADMIN",
+          loading: false,
+        }),
+      setGuestAddress: (guestAddress) => set({ guestAddress }),
+      clearAuth: () =>
+        set({
+          user: null,
+          isAdmin: false,
+          loading: false,
+        }),
+      logout: async () => {
+        try {
+          await fetch("/api/auth/signout", { method: "POST" });
+        } finally {
+          set({
+            user: null,
+            isAdmin: false,
+            loading: false,
+          });
+        }
+      },
+      setLoading: (loading) => set({ loading }),
+      setHasHydrated: (_hasHydrated) => set({ _hasHydrated }),
+    }),
+    {
+      name: "auth-session-storage",
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({
+        user: state.user,
+        isAdmin: state.isAdmin,
+        guestAddress: state.guestAddress,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
-    set({
-      user,
-      isAdmin: user?.role === "ADMIN" || user?.role === "SUPERADMIN",
-      loading: false,
-    });
-  },
-  setGuestAddress: (address) => {
-    if (address) {
-      sessionStorage.setItem("guest_address", JSON.stringify(address));
-    } else {
-      sessionStorage.removeItem("guest_address");
-    }
-    set({ guestAddress: address });
-  },
-  clearAuth: () => {
-    sessionStorage.removeItem("auth_user");
-    set({ user: null, isAdmin: false, loading: false });
-  },
-  logout: () => {
-    sessionStorage.removeItem("auth_user");
-    set({ user: null, isAdmin: false, loading: false });
-  },
-  setLoading: (loading) => set({ loading }),
-}));
+  )
+);

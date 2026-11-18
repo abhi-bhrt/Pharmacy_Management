@@ -1,17 +1,19 @@
 // hooks/usePublicShops.ts
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAuthStore, type UserAddress } from "@/store/useAuthStore";
+import { useState, useEffect, useMemo } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useDebounce } from "@/hooks/useDebounce";
+import type { AddressInput, ShopResponse } from "@/types";
 
 export function usePublicShops() {
   const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.loading);
+  const hasHydrated = useAuthStore((state) => state._hasHydrated);
   const guestAddress = useAuthStore((state) => state.guestAddress);
   const setGuestAddress = useAuthStore((state) => state.setGuestAddress);
 
-  const [shops, setShops] = useState<any[]>([]);
+  const [allShops, setAllShops] = useState<ShopResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
@@ -19,74 +21,89 @@ export function usePublicShops() {
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [hasInitializedLocation, setHasInitializedLocation] = useState(false);
 
-  const debouncedSearch = useDebounce(search, 400);
-  const debouncedCity = useDebounce(city, 400);
-  const debouncedPincode = useDebounce(pincode, 400);
+  const debouncedSearch = useDebounce(search, 300);
+  const debouncedCity = useDebounce(city, 300);
+  const debouncedPincode = useDebounce(pincode, 300);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!hasHydrated || authLoading) return;
 
-    if (user?.address) {
-      setCity(user.address.district || user.address.area || "");
-      setPincode(user.address.pincode || "");
+    const activeAddress = user?.address || guestAddress;
+    const hasValidLocation = Boolean(
+      activeAddress?.pincode?.trim() ||
+      activeAddress?.district?.trim() ||
+      activeAddress?.area?.trim()
+    );
+
+    if (hasValidLocation && activeAddress) {
+      setCity(activeAddress.district || activeAddress.area || "");
+      setPincode(activeAddress.pincode || "");
       setShowAddressModal(false);
-      setHasInitializedLocation(true);
-      return;
-    }
-
-    if (user && !user.address) {
-      setHasInitializedLocation(true);
-      return;
-    }
-
-    const storedGuest = sessionStorage.getItem("guest_address");
-    const activeGuest: UserAddress | null =
-      guestAddress || (storedGuest ? JSON.parse(storedGuest) : null);
-
-    if (activeGuest && (activeGuest.pincode || activeGuest.district || activeGuest.area)) {
-      if (!guestAddress) setGuestAddress(activeGuest);
-      setCity(activeGuest.district || activeGuest.area || "");
-      setPincode(activeGuest.pincode || "");
-      setShowAddressModal(false);
-    } else {
+    } else if (!hasInitializedLocation) {
       setShowAddressModal(true);
     }
-    setHasInitializedLocation(true);
-  }, [user, authLoading, guestAddress, setGuestAddress]);
 
-  const handleSaveGuestAddress = (address: UserAddress) => {
-    setGuestAddress(address);
-    setCity(address.district || address.area || "");
-    setPincode(address.pincode || "");
+    setHasInitializedLocation(true);
+  }, [hasHydrated, authLoading, user, guestAddress, hasInitializedLocation]);
+
+  const handleSaveGuestAddress = (address: AddressInput) => {
+    const normalizedAddress: AddressInput = {
+      pincode: address.pincode?.trim() || "",
+      state: address.state?.trim() || "",
+      district: address.district?.trim() || "",
+      area: address.area?.trim() || "",
+      country: address.country || "IN",
+    };
+
+    setGuestAddress(normalizedAddress);
+    setCity(normalizedAddress.district || normalizedAddress.area || "");
+    setPincode(normalizedAddress.pincode || "");
     setShowAddressModal(false);
   };
 
   useEffect(() => {
     if (!hasInitializedLocation) return;
 
+    let isMounted = true;
+
     async function fetchShops() {
+      setLoading(true);
       try {
-        setLoading(true);
         const params = new URLSearchParams();
-        if (debouncedSearch) params.append("search", debouncedSearch);
-        if (debouncedCity) params.append("city", debouncedCity);
-        if (debouncedPincode) params.append("pincode", debouncedPincode);
-        params.append("limit", "20");
+        if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+        if (debouncedCity.trim()) params.set("city", debouncedCity.trim());
+        if (debouncedPincode.trim()) params.set("pincode", debouncedPincode.trim());
 
         const res = await fetch(`/api/shops?${params.toString()}`);
         const data = await res.json();
-        if (res.ok && data.success) {
-          setShops(data.data.shops || (data.data.shop ? [data.data.shop] : []));
+
+        if (isMounted) {
+          if (res.ok && data?.success) {
+            setAllShops(data.data?.shops || []);
+          } else {
+            setAllShops([]);
+          }
         }
       } catch (err) {
-        console.error("Failed to fetch shops:", err);
+        console.error("Failed to fetch public shops:", err);
+        if (isMounted) setAllShops([]);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     fetchShops();
+
+    return () => {
+      isMounted = false;
+    };
   }, [debouncedSearch, debouncedCity, debouncedPincode, hasInitializedLocation]);
+
+  const shops = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allShops;
+    return allShops.filter((shop) => shop.shop_name.toLowerCase().includes(q));
+  }, [allShops, search]);
 
   return {
     shops,

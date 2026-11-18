@@ -1,8 +1,6 @@
+// types/medicine.types.ts
 import type { BaseEntity, PaginationParams } from "./common.types";
 
-/**
- * Core Medicine (Inventory) database entity.
- */
 export interface Medicine extends BaseEntity {
   shop_id: string;
   description: string;
@@ -16,9 +14,14 @@ export interface Medicine extends BaseEntity {
   pack_size: string;
 }
 
-/**
- * Input payload for adding a new medicine to inventory.
- */
+export type MedicineItem = Omit<Medicine, "created_at" | "updated_at">;
+
+export interface PublicMedicineResponse extends Medicine {
+  shop_name: string;
+  shop_address: string | null;
+  shop_location: string | null;
+}
+
 export interface CreateMedicineInput {
   shopId: string;
   description: string;
@@ -32,42 +35,27 @@ export interface CreateMedicineInput {
   packSize: string;
 }
 
-/**
- * Input payload for updating an existing medicine.
- */
 export interface UpdateMedicineInput extends Partial<Omit<CreateMedicineInput, "shopId">> {
   id: string;
   shopId: string;
 }
 
-/**
- * Query parameters for filtering and paginating shop inventory.
- */
 export interface MedicineQueryParams extends PaginationParams {
   shopId: string;
+  search?: string;
 }
 
-/**
- * Paginated response structure for medicine queries.
- */
-export interface MedicineListResponse {
-  medicines: Medicine[];
+export interface PublicMedicineQueryParams extends PaginationParams {
+  search?: string;
+  city?: string;
+  pincode?: string;
+}
+
+export interface MedicineListResponse<T = Medicine> {
+  medicines: T[];
   total: number;
   page: number;
   limit: number;
 }
 
-
-export interface MedicineItem {
-  id: string;
-  shop_id: string;
-  description: string;
-  batch_no: string;
-  mrp: string;
-  rate: string;
-  gst_rate: string;
-  exp_date: string;
-  quantity: number;
-  hsn_code: string;
-  pack_size: string;
-}
+export type PublicMedicineListResponse = MedicineListResponse<PublicMedicineResponse>;

@@ -1,8 +1,6 @@
+// types/shop.types.ts
 import type { Address, AddressInput, BaseEntity, UpdateAddressInput } from "./common.types";
 
-/**
- * Core Shop database entity.
- */
 export interface Shop extends BaseEntity {
   shop_name: string;
   phone: string;
@@ -11,21 +9,16 @@ export interface Shop extends BaseEntity {
   pharmacist_name: string;
   pharmacist_registration_number: string;
   gstin: string;
+  location: string;
   owner_id: string;
   address_id: string;
   image_id: string | null;
 }
 
-/**
- * Shop details with joined Address relation.
- */
-export interface ShopResponse extends Shop {
-  address?: Address;
+export interface ShopResponse extends Omit<Shop, "address_id"> {
+  address: Address | null;
 }
 
-/**
- * Input payload for creating a new shop.
- */
 export interface CreateShopInput {
   ownerId: string;
   shopName: string;
@@ -40,12 +33,22 @@ export interface CreateShopInput {
   imageId?: string | null;
 }
 
-/**
- * Input payload for updating an existing shop.
- */
 export interface UpdateShopInput extends Partial<Omit<CreateShopInput, "ownerId" | "address">> {
   ownerId: string;
   address?: UpdateAddressInput;
+}
+
+export interface PublicShopsQuery {
+  search?: string;
+  city?: string;
+  pincode?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface FindShopsQuery {
+  shopName?: string;
+  gstin?: string;
 }
 
 export interface ShopListResponse {

@@ -4,10 +4,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pill, AlertCircle, Loader2, ChevronDown, MapPin, ArrowRight } from "lucide-react";
+import { AlertCircle, Loader2, ChevronDown, MapPin, ArrowRight, ShieldCheck } from "lucide-react";
+import { useAuthStore } from "@/store/useAuthStore";
+import { BRAND_CONFIG } from "@/config/brand";
+import type { CreateUserInput } from "@/types";
 
 export default function SignupPage() {
   const router = useRouter();
+  const setAuth = useAuthStore((state) => state.setAuth);
+  const { name: brandName, tagline, description, LogoIcon, defaultCountry } = BRAND_CONFIG;
+
   const [showAddress, setShowAddress] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -22,30 +28,37 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+
+    const hasAnyAddressField = Boolean(
+      form.pincode.trim() ||
+      form.state.trim() ||
+      form.district.trim() ||
+      form.area.trim()
+    );
+
+    if (hasAnyAddressField && (!form.pincode.trim() || !form.state.trim())) {
+      setError("Pincode and State are required when providing an address");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const hasAddress =
-        form.pincode.trim() ||
-        form.state.trim() ||
-        form.district.trim() ||
-        form.area.trim();
-
-      const payload = {
-        name: form.name,
-        email: form.email,
-        mobNo: form.mobNo,
+      const payload: CreateUserInput = {
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        mobNo: form.mobNo.trim(),
         password: form.password,
-        address: hasAddress
+        address: hasAnyAddressField
           ? {
-              pincode: form.pincode,
-              state: form.state,
-              district: form.district,
-              area: form.area,
-              country: "IN",
+              pincode: form.pincode.trim(),
+              state: form.state.trim(),
+              district: form.district.trim(),
+              area: form.area.trim(),
+              country: defaultCountry,
             }
           : undefined,
       };
@@ -57,200 +70,251 @@ export default function SignupPage() {
       });
 
       const data = await res.json();
+
       if (!res.ok || !data.success) {
         throw new Error(data.error?.message || "Failed to create account");
       }
 
+      setAuth(data.data.user);
       router.push("/");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-zinc-100 p-4 sm:p-6 lg:p-8">
-      {/* Outer Card Wrapper (Split Screen Style) */}
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-zinc-200/80 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-        
-        {/* Left Side: Visual Banner Panel (Inspired by reference layout) */}
-        <div className="lg:col-span-5 relative bg-gradient-to-br from-teal-900 via-[#2a9d8f] to-teal-800 p-10 flex flex-col justify-between text-white overflow-hidden">
-          {/* Subtle background decorative shapes */}
-          <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-          <div className="absolute -left-16 -bottom-16 w-64 h-64 rounded-full bg-black/10 blur-2xl pointer-events-none" />
-
-          {/* Top Brand/Logo */}
-          <div className="relative z-10 flex items-center gap-2.5">
-            <div className="h-10 w-10 rounded-lg bg-white/10 border border-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner">
-              <Pill className="h-5 w-5 rotate-45" />
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-100 pt-12">
+      <div className="w-full max-w-4xl bg-white rounded-sm shadow-sm border border-slate-300 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        <div className="lg:col-span-5 bg-slate-900 p-8 sm:p-10 flex flex-col justify-between text-white border-b lg:border-b-0 lg:border-r border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-sm bg-teal-600 flex items-center justify-center text-white">
+              <LogoIcon className="h-5 w-5" />
             </div>
-            <span className="font-semibold tracking-tight text-lg">PharmaCare</span>
+            <span className="font-bold tracking-tight text-lg text-white uppercase">
+              {brandName}
+            </span>
           </div>
 
-          {/* Middle Content Callout */}
-          <div className="relative z-10 my-auto py-12">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight leading-snug">
-              Manage inventory & billing with ease.
+          <div className="my-12">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-slate-800 border border-slate-700 text-teal-400 text-[11px] font-semibold uppercase tracking-wider mb-4">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Account Registration</span>
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-white leading-snug">
+              {tagline}
             </h2>
-            <p className="text-teal-100/80 text-sm mt-3 leading-relaxed">
-              Streamline your pharmacy workflow, track real-time stock levels, and securely handle prescriptions all in one place.
+            <p className="text-slate-400 text-xs mt-3 leading-relaxed">
+              {description}
             </p>
           </div>
 
-          {/* Bottom Carousel Indicator Simulation */}
-          <div className="relative z-10 flex items-center gap-2">
-            <div className="h-1.5 w-6 rounded-full bg-white" />
-            <div className="h-1.5 w-1.5 rounded-full bg-white/40" />
-            <div className="h-1.5 w-1.5 rounded-full bg-white/40" />
+          <div className="pt-6 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+            <span>{brandName} System</span>
+            <span className="text-teal-400 font-medium">Verified Onboarding</span>
           </div>
         </div>
 
-        {/* Right Side: Form Panel */}
         <div className="lg:col-span-7 p-8 sm:p-12 flex flex-col justify-center bg-white">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Create an account</h1>
-            <p className="text-xs text-zinc-500 mt-1">
-              Already have an account?{" "}
-              <Link href="/signin" className="text-[#2a9d8f] font-semibold hover:underline">
-                Sign in
-              </Link>
-            </p>
+          <div className="mb-6 pb-4 border-b border-slate-200 flex items-baseline justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                Create your {brandName} account
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Complete the fields below to register
+              </p>
+            </div>
           </div>
 
           {error && (
-            <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
+            <div className="mb-5 p-3 bg-red-50 border-l-2 border-red-600 text-red-800 rounded-sm text-xs flex items-center gap-2.5">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <span className="font-medium">{error}</span>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Full Name */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+              <label
+                htmlFor="signup-name"
+                className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1.5"
+              >
                 Full Name
               </label>
               <input
+                id="signup-name"
                 type="text"
                 required
-                placeholder="Abhishek Bharti"
+                disabled={loading}
+                autoComplete="name"
+                placeholder="Enter full name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3.5 py-2.5 border rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition shadow-2xs"
+                className="w-full px-3.5 py-2 border border-slate-300 rounded-sm text-sm text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700 disabled:bg-slate-50 transition-colors"
               />
             </div>
 
-            {/* Email & Mobile Number Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+                <label
+                  htmlFor="signup-email"
+                  className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1.5"
+                >
                   Email Address
                 </label>
                 <input
+                  id="signup-email"
                   type="email"
                   required
-                  placeholder="abhishek.bharti@example.com"
+                  disabled={loading}
+                  autoComplete="email"
+                  placeholder="name@domain.com"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition shadow-2xs"
+                  className="w-full px-3.5 py-2 border border-slate-300 rounded-sm text-sm text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700 disabled:bg-slate-50 transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+                <label
+                  htmlFor="signup-mob"
+                  className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1.5"
+                >
                   Mobile Number
                 </label>
                 <input
+                  id="signup-mob"
                   type="tel"
                   required
-                  placeholder="9876543210"
+                  disabled={loading}
+                  autoComplete="tel"
+                  placeholder="10-digit mobile number"
                   value={form.mobNo}
                   onChange={(e) => setForm({ ...form, mobNo: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition shadow-2xs"
+                  className="w-full px-3.5 py-2 border border-slate-300 rounded-sm text-sm text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700 disabled:bg-slate-50 transition-colors"
                 />
               </div>
             </div>
 
-            {/* Password */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+              <label
+                htmlFor="signup-password"
+                className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1.5"
+              >
                 Password
               </label>
               <input
+                id="signup-password"
                 type="password"
                 required
+                disabled={loading}
+                autoComplete="new-password"
                 placeholder="••••••••"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full px-3.5 py-2.5 border rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition shadow-2xs"
+                className="w-full px-3.5 py-2 border border-slate-300 rounded-sm text-sm text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700 disabled:bg-slate-50 transition-colors"
               />
             </div>
 
-            {/* Collapsible Optional Address Dropdown */}
-            <div className="border border-zinc-200 rounded-lg overflow-hidden bg-zinc-50/30">
+            <div className="border border-slate-300 rounded-sm overflow-hidden bg-slate-50">
               <button
                 type="button"
                 onClick={() => setShowAddress(!showAddress)}
-                className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-zinc-50 transition-colors cursor-pointer"
+                className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-[#2a9d8f]" />
-                  <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                    Add Address Details
+                  <MapPin className="h-4 w-4 text-teal-700" />
+                  <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider">
+                    Address Details
                   </span>
-                  <span className="text-xs text-zinc-400 font-normal">(Optional)</span>
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    (Optional)
+                  </span>
                 </div>
                 <ChevronDown
-                  className={`h-4 w-4 text-zinc-500 transition-transform duration-200 ${
+                  className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
                     showAddress ? "rotate-180" : ""
                   }`}
                 />
               </button>
 
               {showAddress && (
-                <div className="p-4 pt-2 border-t border-zinc-200/80 bg-white space-y-3">
+                <div className="p-4 border-t border-slate-300 bg-white space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">Pincode</label>
+                      <label
+                        htmlFor="signup-pincode"
+                        className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1"
+                      >
+                        Pincode
+                      </label>
                       <input
+                        id="signup-pincode"
                         type="text"
-                        placeholder="484001"
+                        disabled={loading}
+                        autoComplete="postal-code"
+                        placeholder="6-digit pincode"
                         value={form.pincode}
                         onChange={(e) => setForm({ ...form, pincode: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-xs text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-sm text-xs text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">State</label>
+                      <label
+                        htmlFor="signup-state"
+                        className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1"
+                      >
+                        State
+                      </label>
                       <input
+                        id="signup-state"
                         type="text"
-                        placeholder="Madhya Pradesh"
+                        disabled={loading}
+                        autoComplete="address-level1"
+                        placeholder="State"
                         value={form.state}
                         onChange={(e) => setForm({ ...form, state: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-xs text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-sm text-xs text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
                       />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">District</label>
+                      <label
+                        htmlFor="signup-district"
+                        className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1"
+                      >
+                        District
+                      </label>
                       <input
+                        id="signup-district"
                         type="text"
-                        placeholder="Shahdol"
+                        disabled={loading}
+                        autoComplete="address-level2"
+                        placeholder="District"
                         value={form.district}
                         onChange={(e) => setForm({ ...form, district: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-xs text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-sm text-xs text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">Area / Street</label>
+                      <label
+                        htmlFor="signup-area"
+                        className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1"
+                      >
+                        Area / Street
+                      </label>
                       <input
+                        id="signup-area"
                         type="text"
-                        placeholder="Burhar Road, Sohagpur"
+                        disabled={loading}
+                        autoComplete="street-address"
+                        placeholder="Street or locality"
                         value={form.area}
                         onChange={(e) => setForm({ ...form, area: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-xs text-zinc-900 placeholder:text-zinc-400 border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f] bg-zinc-50/50 transition"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-sm text-xs text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
                       />
                     </div>
                   </div>
@@ -258,24 +322,32 @@ export default function SignupPage() {
               )}
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#2a9d8f] hover:bg-[#238276] text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50 mt-6 shadow-sm cursor-pointer"
+              className="w-full mt-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 px-4 rounded-sm text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
                   <span>Create Account</span>
-                  <ArrowRight className="h-4 w-4 text-teal-100" />
+                  <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </button>
           </form>
-        </div>
 
+          <div className="mt-6 pt-5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+            <span>Already have an account?</span>
+            <Link
+              href="/signin"
+              className="text-teal-700 font-semibold hover:text-teal-800 hover:underline"
+            >
+              Sign in
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );

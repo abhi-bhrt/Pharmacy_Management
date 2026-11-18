@@ -1,21 +1,15 @@
 // services/users/user-verify.service.ts
-import type { VerifyCredentialsInput, UserProfileResponse, SignInInput } from "@/types/user.types";
-import { getUserProfileById } from "./index";
+import type { VerifyCredentialsRow, SignInInput, AuthResponse } from "@/types";
+import { getUserProfileById } from "./user-profile.service";
 import { pool, type DbExecutor } from "@/lib/db/client";
 import { verifyPassword } from "@/lib/auth/password.util";
 import { signToken } from "@/lib/auth/jwt.util";
 import { AppError } from "@/lib/api/app-error";
 
-interface VerifyCredentialsResult {
-  user: UserProfileResponse;
-  token: string;
-}
-
 export async function verifyUserCredentials(
   input: SignInInput,
   executor: DbExecutor = pool
-): Promise<VerifyCredentialsResult | null> {
-
+): Promise<AuthResponse> {
   const { email, password } = input;
 
   if (!email || !password) {
@@ -23,20 +17,19 @@ export async function verifyUserCredentials(
   }
 
   try {
-
     const queryText = `
-    SELECT id, email, password, role
-    FROM users
-    WHERE email = $1
-    LIMIT 1
-  `;
+      SELECT id, email, password, role
+      FROM users
+      WHERE email = $1
+      LIMIT 1
+    `;
 
-    const result = await executor.query<VerifyCredentialsInput>(queryText, [email.toLowerCase().trim()]);
+    const result = await executor.query<VerifyCredentialsRow>(queryText, [email.toLowerCase().trim()]);
 
     const existing = result.rows[0];
 
     if (!existing) {
-      throw AppError.notFound("User not found");
+      throw AppError.unauthorized("Invalid credentials");
     }
 
     const isPasswordValid = await verifyPassword(password, existing.password);
@@ -51,16 +44,13 @@ export async function verifyUserCredentials(
       role: existing.role,
     });
 
-    const user = await getUserProfileById(existing.id);
+    const user = await getUserProfileById(existing.id, executor);
 
-    if(!user) {
+    if (!user) {
       throw AppError.notFound("User profile not found");
     }
 
-    return {
-      user, token,
-    };
-
+    return { user, token };
   } catch (error) {
     if (error instanceof AppError) {
       throw error;

@@ -1,3 +1,4 @@
+// services/users/user-profile.service.ts
 import { pool, type DbExecutor } from "@/lib/db/client";
 import type { UserProfileResponse } from "@/types";
 import { AppError } from "@/lib/api/app-error";
@@ -43,15 +44,13 @@ export async function getUserProfileById(
   try {
     const result = await executor.query<UserProfileResponse>(queryText, [userId]);
     return result.rows[0] ?? null;
-
   } catch (error) {
-
-    if (error instanceof AppError) {
-      throw error;
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+      throw AppError.validation("Invalid User ID format");
     }
 
     console.error("Error executing getUserProfileById:", error);
-    
+
     throw AppError.internal("Internal server error while fetching user profile");
   }
 }

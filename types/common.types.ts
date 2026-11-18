@@ -1,61 +1,40 @@
-/**
- * Shared base fields present on all database entities.
- */
+// types/common.types.ts
 export interface BaseEntity {
   id: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
-/**
- * Core Address entity stored in the database.
- */
 export interface Address extends BaseEntity {
   pincode: string;
   state: string;
   country: string;
-  district: string;
-  area: string;
+  district: string | null;
+  area: string | null;
 }
 
-/**
- * Payload for creating or replacing an address.
- */
-export interface AddressInput {
-  pincode: string;
-  state: string;
+export interface AddressInput extends Omit<Address, keyof BaseEntity | "country" | "district" | "area"> {
   country?: string;
-  district: string;
-  area: string;
+  district?: string | null;
+  area?: string | null;
 }
 
-/**
- * Payload for partially updating an address.
- */
 export type UpdateAddressInput = Partial<AddressInput>;
 
-/**
- * Standard query parameters for paginated list endpoints.
- */
 export interface PaginationParams {
   search?: string;
   page?: number;
   limit?: number;
 }
 
-/**
- * Standard paginated list response structure.
- */
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
   page: number;
   limit: number;
+  totalPages?: number;
 }
 
-/**
- * Unified API Response envelope used by all Next.js Route Handlers.
- */
 export type ApiResponse<T = unknown> =
   | {
       success: true;

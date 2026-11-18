@@ -1,65 +1,95 @@
 // services/public/shops-find.service.ts
 import { pool, type DbExecutor } from "@/lib/db/client";
-import type { ShopResponse } from "@/types";
+import { AppError } from "@/lib/api/app-error";
+import type { ShopResponse, PublicShopsQuery, ShopListResponse } from "@/types";
 
 export async function getPublicShopsService(
-  criteria: {
-    city?: string;
-    pincode?: string;
-    page?: number;
-    limit?: number;
-  },
+  criteria: PublicShopsQuery,
   executor: DbExecutor = pool
-): Promise<{ shops: ShopResponse[]; total: number }> {
-  const { city = "", pincode = "", page = 1, limit = 20 } = criteria;
+): Promise<ShopListResponse> {
+  const search = criteria.search?.trim() || "";
+  const city = criteria.city?.trim() || "";
+  const pincode = criteria.pincode?.trim() || "";
+  const page = Math.max(1, criteria.page ?? 1);
+  const limit = Math.min(100, Math.max(1, criteria.limit ?? 20));
   const offset = (page - 1) * limit;
 
-  let queryText = `
-    SELECT 
-      s.*,
-      CASE 
-        WHEN a.id IS NOT NULL THEN row_to_json(a.*)
-        ELSE NULL
-      END AS address
-    FROM shops s
-    LEFT JOIN addresses a ON s.address_id = a.id
-    WHERE 1=1
-  `;
-
-  let countQueryText = `
-    SELECT COUNT(*) as total
-    FROM shops s
-    LEFT JOIN addresses a ON s.address_id = a.id
-    WHERE 1=1
-  `;
-
-  const values: any[] = [];
+  const clauses: string[] = [];
+  const values: unknown[] = [];
   let paramIndex = 1;
 
+  if (search) {
+    clauses.push(`s.shop_name ILIKE $${paramIndex++}`);
+    values.push(`%${search}%`);
+  }
+
   if (city) {
-    queryText += ` AND (a.district ILIKE $${paramIndex} OR a.area ILIKE $${paramIndex})`;
-    countQueryText += ` AND (a.district ILIKE $${paramIndex} OR a.area ILIKE $${paramIndex})`;
+    clauses.push(`(a.district ILIKE $${paramIndex} OR a.area ILIKE $${paramIndex})`);
     values.push(`%${city}%`);
     paramIndex++;
   }
 
   if (pincode) {
-    queryText += ` AND a.pincode ILIKE $${paramIndex}`;
-    countQueryText += ` AND a.pincode ILIKE $${paramIndex}`;
+    clauses.push(`a.pincode ILIKE $${paramIndex++}`);
     values.push(`%${pincode}%`);
-    paramIndex++;
   }
 
-  queryText += ` ORDER BY s.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-  const paginatedValues = [...values, limit, offset];
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
 
-  const [shopsRes, countRes] = await Promise.all([
-    executor.query<ShopResponse>(queryText, paginatedValues),
-    executor.query<{ total: string }>(countQueryText, values),
-  ]);
+  const queryText = `
+    SELECT 
+      s.id,
+      s.shop_name,
+      s.phone,
+      s.email,
+      s.drug_licence_number,
+      s.pharmacist_name,
+      s.pharmacist_registration_number,
+      s.gstin,
+      s.location,
+      s.owner_id,
+      s.image_id,
+      s.created_at,
+      s.updated_at,
+      CASE 
+        WHEN a.id IS NOT NULL THEN json_build_object(
+          'id', a.id,
+          'pincode', a.pincode,
+          'state', a.state,
+          'country', a.country,
+          'district', a.district,
+          'area', a.area,
+          'created_at', a.created_at,
+          'updated_at', a.updated_at
+        )
+        ELSE NULL
+      END AS address
+    FROM shops s
+    LEFT JOIN addresses a ON s.address_id = a.id
+    ${whereClause}
+    ORDER BY s.created_at DESC
+    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+  `;
 
-  return {
-    shops: shopsRes.rows,
-    total: parseInt(countRes.rows[0]?.total || "0", 10),
-  };
+  const countQueryText = `
+    SELECT COUNT(*)::text AS total
+    FROM shops s
+    LEFT JOIN addresses a ON s.address_id = a.id
+    ${whereClause}
+  `;
+
+  try {
+    const [shopsRes, countRes] = await Promise.all([
+      executor.query<ShopResponse>(queryText, [...values, limit, offset]),
+      executor.query<{ total: string }>(countQueryText, values),
+    ]);
+
+    return {
+      shops: shopsRes.rows,
+      total: parseInt(countRes.rows[0]?.total || "0", 10),
+    };
+  } catch (error) {
+    console.error("Error executing getPublicShopsService:", error);
+    throw AppError.internal("Internal server error while fetching shops");
+  }
 }

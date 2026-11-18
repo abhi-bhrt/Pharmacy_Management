@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import type { UserProfileResponse } from "@/types";
 
 export default function AuthProvider({
   children,
@@ -14,27 +15,14 @@ export default function AuthProvider({
   const setLoading = useAuthStore((state) => state.setLoading);
 
   useEffect(() => {
-    async function checkAuth() {
-      try {
+    let isMounted = true;
+
+    async function verifySession() {
+      if (!useAuthStore.getState().user) {
         setLoading(true);
+      }
 
-        const cachedUser = sessionStorage.getItem("auth_user");
-        if (cachedUser) {
-          const user = JSON.parse(cachedUser);
-          setAuth({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            mob_no: user.mob_no,
-            role: user.role,
-            status: user.status,
-            is_profile_complete: user.is_profile_complete,
-            address: user.address,
-          });
-          setLoading(false);
-          return;
-        }
-
+      try {
         const res = await fetch("/api/protected/users/profile", {
           method: "GET",
           credentials: "include",
@@ -44,41 +32,32 @@ export default function AuthProvider({
         });
 
         if (!res.ok) {
-          clearAuth();
-          sessionStorage.removeItem("auth_user");
+          if (isMounted) clearAuth();
           return;
         }
 
         const data = await res.json();
 
-        if (data?.success && data?.data?.user) {
-          const user = data.data.user;
-          sessionStorage.setItem("auth_user", JSON.stringify(user));
-
-          setAuth({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            mob_no: user.mob_no,
-            role: user.role,
-            status: user.status,
-            is_profile_complete: user.is_profile_complete,
-            address: user.address,
-          });
-        } else {
-          clearAuth();
-          sessionStorage.removeItem("auth_user");
+        if (isMounted) {
+          if (data?.success && data?.data?.user) {
+            setAuth(data.data.user as UserProfileResponse);
+          } else {
+            clearAuth();
+          }
         }
       } catch (error) {
-        console.error("Auth check failed:", error);
-        clearAuth();
-        sessionStorage.removeItem("auth_user");
+        console.error("Session verification failed:", error);
+        if (isMounted) clearAuth();
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
-    checkAuth();
+    verifySession();
+
+    return () => {
+      isMounted = false;
+    };
   }, [setAuth, clearAuth, setLoading]);
 
   return <>{children}</>;

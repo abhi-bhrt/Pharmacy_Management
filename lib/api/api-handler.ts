@@ -1,6 +1,17 @@
+// lib/api/api-handler.ts
 import { NextResponse } from "next/server";
 import { AppError } from "./app-error";
 import type { ApiResponse } from "@/types";
+
+interface PostgresErrorLike {
+  code?: string;
+  detail?: string;
+  constraint?: string;
+}
+
+function isPostgresError(error: unknown): error is PostgresErrorLike {
+  return typeof error === "object" && error !== null && "code" in error;
+}
 
 /**
  * Helper to create a standardized JSON success response.
@@ -42,21 +53,56 @@ export function sendError(
     );
   }
 
-  // Handle PostgreSQL unique constraint violation (code 23505)
-  if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: "CONFLICT",
-          message: "A record with these details already exists.",
-        },
-      },
-      { status: 409, headers }
-    );
+  if (isPostgresError(error)) {
+    switch (error.code) {
+      case "23505":
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "CONFLICT",
+              message: "A record with these details already exists.",
+            },
+          },
+          { status: 409, headers }
+        );
+      case "22P02":
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "Invalid identifier or data format provided.",
+            },
+          },
+          { status: 400, headers }
+        );
+      case "23503":
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "BAD_REQUEST",
+              message: "Referenced resource does not exist or cannot be modified.",
+            },
+          },
+          { status: 400, headers }
+        );
+      case "23502":
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "A required database field was omitted.",
+            },
+          },
+          { status: 400, headers }
+        );
+    }
   }
 
-  console.error("❌ [Unhandled API Error]:", error);
+  console.error("[Unhandled API Error]:", error);
 
   return NextResponse.json(
     {
