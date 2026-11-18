@@ -1,3 +1,4 @@
+// services/invoices/invoice-find.service.ts
 import { pool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
 import { PAGINATION_DEFAULTS } from "@/config/constants";
@@ -84,33 +85,46 @@ export async function getInvoiceDetailsByIdService(
   shopId: string,
   executor: DbExecutor = pool
 ): Promise<InvoiceFullResponse> {
-  const invoiceRes = await executor.query<Omit<InvoiceFullResponse, "items">>(
-    `SELECT 
-      i.*,
-      json_build_object(
-        'name', b.name,
-        'phone', b.phone,
-        'email', b.email,
-        'gstin', b.gstin
-      ) AS buyer
-    FROM invoices i
-    JOIN buyers b ON i.buyer_id = b.id
-    WHERE i.id = $1 AND i.shop_id = $2
-    LIMIT 1`,
-    [invoiceId, shopId]
-  );
-
-  if (invoiceRes.rows.length === 0) {
-    throw AppError.notFound("Invoice");
+  if (!invoiceId?.trim() || !shopId?.trim()) {
+    throw AppError.validation("Invoice ID and Shop ID are required");
   }
 
-  const itemsRes = await executor.query<InvoiceItem>(
-    `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at ASC`,
-    [invoiceId]
-  );
+  try {
+    const invoiceRes = await executor.query<Omit<InvoiceFullResponse, "items">>(
+      `SELECT 
+        i.*,
+        json_build_object(
+          'name', b.name,
+          'phone', b.phone,
+          'email', b.email,
+          'gstin', b.gstin
+        ) AS buyer
+      FROM invoices i
+      JOIN buyers b ON i.buyer_id = b.id
+      WHERE i.id = $1 AND i.shop_id = $2
+      LIMIT 1`,
+      [invoiceId.trim(), shopId.trim()]
+    );
 
-  return {
-    ...invoiceRes.rows[0],
-    items: itemsRes.rows,
-  };
+    if (invoiceRes.rows.length === 0) {
+      throw AppError.notFound("Invoice not found");
+    }
+
+    const itemsRes = await executor.query<InvoiceItem>(
+      `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at ASC`,
+      [invoiceId.trim()]
+    );
+
+    return {
+      ...invoiceRes.rows[0],
+      items: itemsRes.rows,
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+      throw AppError.validation("Invalid Invoice ID format");
+    }
+    console.error("Error executing getInvoiceDetailsByIdService:", error);
+    throw AppError.internal("Internal server error while fetching invoice details");
+  }
 }

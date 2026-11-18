@@ -1,12 +1,12 @@
+// services/shops/shop-find.service.ts
 import { pool, type DbExecutor } from "@/lib/db/client";
 import type { ShopResponse } from "@/types";
-
 
 export async function getShopByOwnerService(
   ownerId: string,
   executor: DbExecutor = pool
 ): Promise<ShopResponse | null> {
-  if (!ownerId) {
+  if (!ownerId?.trim()) {
     return null;
   }
 
@@ -14,7 +14,16 @@ export async function getShopByOwnerService(
     SELECT 
       s.*,
       CASE 
-        WHEN a.id IS NOT NULL THEN row_to_json(a.*)
+        WHEN a.id IS NOT NULL THEN json_build_object(
+          'id', a.id,
+          'pincode', a.pincode,
+          'state', a.state,
+          'country', a.country,
+          'district', a.district,
+          'area', a.area,
+          'created_at', a.created_at,
+          'updated_at', a.updated_at
+        )
         ELSE NULL
       END AS address
     FROM shops s
@@ -23,10 +32,9 @@ export async function getShopByOwnerService(
     LIMIT 1
   `;
 
-  const res = await executor.query<ShopResponse>(queryText, [ownerId]);
+  const res = await executor.query<ShopResponse>(queryText, [ownerId.trim()]);
   return res.rows[0] ?? null;
 }
-
 
 export async function findShopsByQueryService(
   criteria: {
@@ -35,7 +43,8 @@ export async function findShopsByQueryService(
   },
   executor: DbExecutor = pool
 ): Promise<ShopResponse[]> {
-  const { shopName, gstin } = criteria;
+  const shopName = criteria.shopName?.trim();
+  const gstin = criteria.gstin?.trim();
 
   if (!shopName && !gstin) {
     return [];
@@ -45,7 +54,16 @@ export async function findShopsByQueryService(
     SELECT 
       s.*,
       CASE 
-        WHEN a.id IS NOT NULL THEN row_to_json(a.*)
+        WHEN a.id IS NOT NULL THEN json_build_object(
+          'id', a.id,
+          'pincode', a.pincode,
+          'state', a.state,
+          'country', a.country,
+          'district', a.district,
+          'area', a.area,
+          'created_at', a.created_at,
+          'updated_at', a.updated_at
+        )
         ELSE NULL
       END AS address
     FROM shops s
@@ -53,7 +71,7 @@ export async function findShopsByQueryService(
     WHERE 1=1
   `;
 
-  const values: any[] = [];
+  const values: unknown[] = [];
   let paramIndex = 1;
 
   if (shopName) {
@@ -62,7 +80,6 @@ export async function findShopsByQueryService(
   }
 
   if (gstin) {
-    // Changed to ILIKE for partial/half-matched GSTIN support
     queryText += ` AND s.gstin ILIKE $${paramIndex++}`;
     values.push(`%${gstin}%`);
   }

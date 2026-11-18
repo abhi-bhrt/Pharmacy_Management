@@ -1,4 +1,6 @@
 // hooks/useBillingLogic.ts
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useMedicines } from "@/hooks/useMedicines";
@@ -25,12 +27,9 @@ export interface ShopOption {
 
 export function useBillingLogic() {
   const router = useRouter();
-  const { medicines } = useMedicines();
+  const { medicines } = useMedicines(100);
 
-  // Billing Type Toggle ("B2C" | "B2B")
   const [billingType, setBillingType] = useState<"B2C" | "B2B">("B2C");
-
-  // B2B Input Method ("manual" | "search")
   const [b2bInputMode, setB2bInputMode] = useState<"manual" | "search">("manual");
   const [shopSearchQuery, setShopSearchQuery] = useState("");
   const [shopSearchResults, setShopSearchResults] = useState<ShopOption[]>([]);
@@ -55,7 +54,6 @@ export function useBillingLogic() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // Helper function to reset all billing form details
   const resetForm = () => {
     setBillingType("B2C");
     setB2bInputMode("manual");
@@ -77,30 +75,44 @@ export function useBillingLogic() {
     setError("");
   };
 
-  // Debounced or live search for shops when in B2B search mode
   useEffect(() => {
-    if (billingType === "B2B" && b2bInputMode === "search" && shopSearchQuery.trim().length > 0) {
+    let isMounted = true;
+    const query = shopSearchQuery.trim();
+
+    if (billingType === "B2B" && b2bInputMode === "search" && query.length > 0) {
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(`/api/shops/search?shopName=${encodeURIComponent(shopSearchQuery)}`);
-          const data = await res.json();
-          if (data.success && data.data?.shops) {
+          const res = await fetch(`/api/shops/search?shopName=${encodeURIComponent(query)}`, {
+            credentials: "include",
+          });
+          const data = await res.json().catch(() => null);
+
+          if (!isMounted) return;
+
+          if (data?.success && Array.isArray(data.data?.shops) && data.data.shops.length > 0) {
             setShopSearchResults(data.data.shops);
           } else {
-            // Try searching by gstin if shopName didn't yield or as fallback
-            const resGstin = await fetch(`/api/shops/search?gstin=${encodeURIComponent(shopSearchQuery)}`);
-            const dataGstin = await resGstin.json();
-            if (dataGstin.success && dataGstin.data?.shops) {
+            const resGstin = await fetch(`/api/shops/search?gstin=${encodeURIComponent(query)}`, {
+              credentials: "include",
+            });
+            const dataGstin = await resGstin.json().catch(() => null);
+            if (!isMounted) return;
+
+            if (dataGstin?.success && Array.isArray(dataGstin.data?.shops)) {
               setShopSearchResults(dataGstin.data.shops);
             } else {
               setShopSearchResults([]);
             }
           }
         } catch {
-          setShopSearchResults([]);
+          if (isMounted) setShopSearchResults([]);
         }
       }, 300);
-      return () => clearTimeout(timer);
+
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+      };
     } else {
       setShopSearchResults([]);
     }
@@ -123,9 +135,9 @@ export function useBillingLogic() {
       m.description.toLowerCase().includes(query) ||
       m.batch_no.toLowerCase().includes(query) ||
       m.hsn_code.toLowerCase().includes(query) ||
-      m.mrp.toLowerCase().includes(query) ||
-      m.exp_date.toLowerCase().includes(query) ||
-      m.quantity.toString().includes(query)
+      String(m.mrp).toLowerCase().includes(query) ||
+      String(m.exp_date).toLowerCase().includes(query) ||
+      String(m.quantity).includes(query)
     );
   });
 
@@ -147,9 +159,9 @@ export function useBillingLogic() {
           medicineId: med.id,
           description: med.description,
           batchNo: med.batch_no,
-          rate: parseFloat(med.rate),
-          mrp: parseFloat(med.mrp),
-          gstRate: parseFloat(med.gst_rate),
+          rate: parseFloat(med.rate) || 0,
+          mrp: parseFloat(med.mrp) || 0,
+          gstRate: parseFloat(med.gst_rate) || 0,
           quantity: 1,
           freeQuantity: 0,
           maxStock: med.quantity,
@@ -177,11 +189,14 @@ export function useBillingLogic() {
   };
 
   const subTotal = cart.reduce((acc, item) => acc + item.rate * item.quantity, 0);
-  const totalGst = cart.reduce((acc, item) => acc + (item.rate * item.quantity * item.gstRate) / 100, 0);
+  const totalGst = cart.reduce(
+    (acc, item) => acc + (item.rate * item.quantity * item.gstRate) / 100,
+    0
+  );
   const discountNum = parseFloat(discount) || 0;
   const netAmount = Math.max(0, subTotal + totalGst - discountNum);
 
-  const handleSubmitBill = async (e: React.FormEvent) => {
+  const handleSubmitBill = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (cart.length === 0) {
       setError("Add at least one medicine item to generate invoice.");
@@ -200,7 +215,7 @@ export function useBillingLogic() {
     setLoading(true);
 
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         buyer: {
           name: buyerName.trim(),
           phone: buyerPhone.trim(),
@@ -220,31 +235,32 @@ export function useBillingLogic() {
         note: note ? note.trim() : null,
       };
 
-      // Pass shopId if B2B search mode was used and a shop was selected
       if (billingType === "B2B" && b2bInputMode === "search" && selectedShopId) {
         payload.buyerShopId = selectedShopId;
       }
 
       const res = await fetch("/api/protected/invoices", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || "Failed to generate invoice");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error?.message || "Failed to generate invoice");
       }
 
-      // Clear details automatically upon success
       resetForm();
       setSuccessMessage("Invoice generated successfully!");
 
       setTimeout(() => {
         router.push(`/invoices/${data.data.invoice.id}`);
-      }, 1000);
-    } catch (err: any) {
-      setError(err.message);
+        router.refresh();
+      }, 800);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to generate invoice";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -303,6 +319,6 @@ export function useBillingLogic() {
     totalGst,
     netAmount,
     handleSubmitBill,
-    resetForm, // Optionally exposed if you want manual reset capability in UI
+    resetForm,
   };
 }

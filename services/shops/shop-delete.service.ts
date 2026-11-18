@@ -1,3 +1,4 @@
+// services/shops/shop-delete.service.ts
 import type { PoolClient } from "pg";
 import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
@@ -6,10 +7,14 @@ export async function deleteShopService(
   ownerId: string,
   executor: DbExecutor = pool
 ): Promise<{ message: string }> {
-  if (isPool(executor)) {
-    return withTransaction((client) => executeDeleteShop(ownerId, client), executor);
+  if (!ownerId?.trim()) {
+    throw AppError.validation("Owner ID is required to delete shop");
   }
-  return executeDeleteShop(ownerId, executor);
+
+  if (isPool(executor)) {
+    return withTransaction((client) => executeDeleteShop(ownerId.trim(), client), executor);
+  }
+  return executeDeleteShop(ownerId.trim(), executor);
 }
 
 async function executeDeleteShop(
@@ -22,7 +27,7 @@ async function executeDeleteShop(
   );
 
   if (shopRes.rows.length === 0) {
-    throw AppError.notFound("Shop");
+    throw AppError.notFound("Shop not found");
   }
 
   const { id: shopId, address_id: addressId } = shopRes.rows[0];

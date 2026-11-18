@@ -3,8 +3,17 @@
 
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { Trash2, ShoppingCart, CheckCircle2, Search, Package } from "lucide-react";
-import { CartItem, ShopOption } from "@/hooks/useBillingLogic";
+import {
+  Trash2,
+  ShoppingCart,
+  CheckCircle2,
+  Search,
+  Package,
+  Building2,
+  UserCheck,
+  Receipt,
+} from "lucide-react";
+import type { CartItem, ShopOption } from "@/hooks/useBillingLogic";
 
 interface BillingPosFormViewProps {
   billingType: "B2C" | "B2B";
@@ -52,7 +61,7 @@ interface BillingPosFormViewProps {
   subTotal: number;
   totalGst: number;
   netAmount: number;
-  handleSubmitBill: (e: React.FormEvent) => void;
+  handleSubmitBill: (e: React.FormEvent<HTMLFormElement>) => void;
 }
 
 export function BillingPosFormView({
@@ -104,19 +113,24 @@ export function BillingPosFormView({
   handleSubmitBill,
 }: BillingPosFormViewProps) {
   return (
-    <form onSubmit={handleSubmitBill} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-8 space-y-6">
-        <div className="bg-white p-6 rounded-lg border border-zinc-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-            <h2 className="text-sm font-bold text-zinc-900 uppercase tracking-wide">
-              Select Medicines (Inventory Search)
-            </h2>
-            <span className="text-xs text-zinc-500">Search 1000+ items instantly</span>
+    <form onSubmit={handleSubmitBill} className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="lg:col-span-8 space-y-5">
+        <div className="bg-white p-6 rounded-sm border border-slate-300 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-teal-700" />
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                1. Inventory Medicine Selection
+              </h2>
+            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Live Stock Lookup
+            </span>
           </div>
 
           <div className="relative">
             <div className="relative">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-400" />
+              <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 value={medSearch}
@@ -125,36 +139,42 @@ export function BillingPosFormView({
                   setIsSearchFocused(true);
                 }}
                 onFocus={() => setIsSearchFocused(true)}
-                placeholder="Search by medicine name, batch, exp date, HSN, MRP, or stock..."
-                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#2a9d8f] focus:border-[#2a9d8f]"
+                placeholder="Search medicine by name, batch number, HSN, MRP, or expiry..."
+                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-300 rounded-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
               />
             </div>
 
             {isSearchFocused && medSearch.trim().length > 0 && (
-              <div className="absolute left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-md shadow-lg max-h-72 overflow-y-auto z-50 divide-y divide-zinc-100">
+              <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-300 rounded-sm shadow-lg max-h-72 overflow-y-auto z-50 divide-y divide-slate-200">
                 {filteredMedicines.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-zinc-500">
-                    No matching medicines found across name, batch, HSN, MRP, or stock.
+                  <div className="p-4 text-center text-xs text-slate-500">
+                    No matching medicines found in active inventory.
                   </div>
                 ) : (
                   filteredMedicines.map((med) => (
                     <div
                       key={med.id}
                       onClick={() => handleAddToCart(med)}
-                      className="p-3 hover:bg-teal-50/50 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                      className="p-3 hover:bg-teal-50/70 cursor-pointer flex items-center justify-between transition-colors text-xs"
                     >
                       <div>
-                        <p className="font-bold text-zinc-900">{med.description}</p>
-                        <p className="text-zinc-500 text-[11px] mt-0.5">
-                          Batch: <span className="font-medium text-zinc-700">{med.batch_no}</span> | 
-                          Exp: <span className="font-medium text-zinc-700">{med.exp_date}</span> | 
-                          HSN: <span className="font-medium text-zinc-700">{med.hsn_code}</span> | 
-                          Pack: <span className="font-medium text-zinc-700">{med.pack_size}</span>
+                        <p className="font-bold text-slate-900">{med.description}</p>
+                        <p className="text-slate-500 text-[11px] mt-0.5 font-mono">
+                          Batch: <span className="font-semibold text-slate-700">{med.batch_no}</span> |{" "}
+                          Exp: <span className="font-semibold text-slate-700">{med.exp_date ? new Date(med.exp_date).toLocaleDateString() : "N/A"}</span> |{" "}
+                          HSN: <span className="font-semibold text-slate-700">{med.hsn_code}</span> |{" "}
+                          Pack: <span className="font-semibold text-slate-700">{med.pack_size}</span>
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-[#2a9d8f]">₹{med.mrp}</p>
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${med.quantity > 0 ? "bg-teal-50 text-teal-700" : "bg-red-50 text-red-600"}`}>
+                      <div className="text-right shrink-0 ml-3">
+                        <p className="font-bold text-teal-700">₹{med.mrp}</p>
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-sm text-[10px] font-bold uppercase tracking-wider border ${
+                            med.quantity > 0
+                              ? "bg-teal-50 text-teal-800 border-teal-200"
+                              : "bg-red-50 text-red-700 border-red-200"
+                          }`}
+                        >
                           Stock: {med.quantity}
                         </span>
                       </div>
@@ -165,52 +185,61 @@ export function BillingPosFormView({
             )}
           </div>
 
-          <div className="border border-zinc-200 rounded-md overflow-hidden mt-4">
+          <div className="border border-slate-300 rounded-sm overflow-x-auto mt-4">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
+                <tr className="bg-slate-900 text-white text-[11px] uppercase tracking-wider">
                   <th className="p-3">Medicine Description</th>
                   <th className="p-3">Batch</th>
                   <th className="p-3">Rate</th>
                   <th className="p-3">GST%</th>
-                  <th className="p-3">Quantity</th>
+                  <th className="p-3">Qty</th>
                   <th className="p-3">Total Amount</th>
-                  <th className="p-3"></th>
+                  <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-slate-200">
                 {cart.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-zinc-400">
-                      <Package className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
-                      Search and select medicines above to add items to bill.
+                    <td colSpan={7} className="p-10 text-center text-slate-500">
+                      <Package className="w-7 h-7 mx-auto mb-2 text-slate-400" />
+                      <p className="text-xs font-semibold uppercase tracking-wider">
+                        Search and select medicines above to add items to bill
+                      </p>
                     </td>
                   </tr>
                 ) : (
                   cart.map((item) => (
-                    <tr key={item.medicineId} className="hover:bg-zinc-50/50">
-                      <td className="p-3 font-semibold text-zinc-900">{item.description}</td>
-                      <td className="p-3 text-zinc-600">{item.batchNo}</td>
-                      <td className="p-3 text-zinc-600">₹{item.rate}</td>
-                      <td className="p-3 text-zinc-600">{item.gstRate}%</td>
+                    <tr key={item.medicineId} className="hover:bg-slate-50">
+                      <td className="p-3 font-bold text-slate-900">{item.description}</td>
+                      <td className="p-3 text-slate-600 font-mono text-[11px]">{item.batchNo}</td>
+                      <td className="p-3 text-slate-700">₹{item.rate.toFixed(2)}</td>
+                      <td className="p-3 text-slate-700">{item.gstRate}%</td>
                       <td className="p-3">
                         <input
                           type="number"
                           min={1}
                           max={item.maxStock}
                           value={item.quantity}
-                          onChange={(e) => updateQuantity(item.medicineId, parseInt(e.target.value) || 1)}
-                          className="w-16 px-2 py-1 border border-zinc-300 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-[#2a9d8f]"
+                          onChange={(e) =>
+                            updateQuantity(item.medicineId, parseInt(e.target.value, 10) || 1)
+                          }
+                          className="w-16 px-2 py-1 border border-slate-300 rounded-sm text-xs text-center font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
                         />
                       </td>
-                      <td className="p-3 font-bold text-zinc-900">
-                        ₹{(item.rate * item.quantity + (item.rate * item.quantity * item.gstRate) / 100).toFixed(2)}
+                      <td className="p-3 font-bold text-slate-900">
+                        ₹
+                        {(
+                          item.rate * item.quantity +
+                          (item.rate * item.quantity * item.gstRate) / 100
+                        ).toFixed(2)}
                       </td>
                       <td className="p-3 text-right">
                         <button
                           type="button"
                           onClick={() => removeItem(item.medicineId)}
-                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                          aria-label={`Remove ${item.description}`}
+                          className="text-red-600 hover:text-red-800 p-1.5 rounded-sm hover:bg-red-50 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -223,19 +252,27 @@ export function BillingPosFormView({
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg border border-zinc-200 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-100 pb-3 gap-3">
-            <h2 className="text-sm font-bold text-zinc-900 uppercase tracking-wide">
-              2. Customer & Prescription Details
-            </h2>
-            <div className="inline-flex bg-zinc-100 p-0.5 rounded-full border border-zinc-200">
+        <div className="bg-white p-6 rounded-sm border border-slate-300 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3.5 gap-3">
+            <div className="flex items-center gap-2">
+              {billingType === "B2B" ? (
+                <Building2 className="w-4 h-4 text-teal-700" />
+              ) : (
+                <UserCheck className="w-4 h-4 text-teal-700" />
+              )}
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                2. Customer & Prescription Details
+              </h2>
+            </div>
+
+            <div className="inline-flex bg-slate-100 p-0.5 rounded-sm border border-slate-300">
               <button
                 type="button"
                 onClick={() => setBillingType("B2C")}
-                className={`px-3 py-1 text-xs font-semibold rounded-full transition-all ${
+                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-colors cursor-pointer ${
                   billingType === "B2C"
-                    ? "bg-white text-zinc-900 shadow-xs"
-                    : "text-zinc-500 hover:text-zinc-900"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 Direct Customer (B2C)
@@ -243,10 +280,10 @@ export function BillingPosFormView({
               <button
                 type="button"
                 onClick={() => setBillingType("B2B")}
-                className={`px-3 py-1 text-xs font-semibold rounded-full transition-all ${
+                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-colors cursor-pointer ${
                   billingType === "B2B"
-                    ? "bg-white text-zinc-900 shadow-xs"
-                    : "text-zinc-500 hover:text-zinc-900"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 B2B (Business)
@@ -254,29 +291,34 @@ export function BillingPosFormView({
             </div>
           </div>
 
-          {/* B2B Shop Source Sub-Toggle Options */}
           {billingType === "B2B" && (
-            <div className="bg-teal-50/40 p-4 rounded-md border border-teal-100 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-800">Is the shop available in our software?</span>
-                <div className="inline-flex bg-white p-0.5 rounded-full border border-zinc-200 text-xs shadow-xs">
+            <div className="bg-slate-50 p-4 rounded-sm border border-slate-300 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-800">
+                  Is the buyer store registered on our platform?
+                </span>
+                <div className="inline-flex bg-white p-0.5 rounded-sm border border-slate-300 text-[11px]">
                   <button
                     type="button"
                     onClick={() => setB2bInputMode("manual")}
-                    className={`px-3 py-1 font-semibold rounded-full transition-all ${
-                      b2bInputMode === "manual" ? "bg-[#2a9d8f] text-white shadow-xs" : "text-zinc-600 hover:text-zinc-900"
+                    className={`px-3 py-1 font-bold uppercase tracking-wider rounded-sm transition-colors cursor-pointer ${
+                      b2bInputMode === "manual"
+                        ? "bg-teal-700 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    No
+                    No (Manual)
                   </button>
                   <button
                     type="button"
                     onClick={() => setB2bInputMode("search")}
-                    className={`px-3 py-1 font-semibold rounded-full transition-all ${
-                      b2bInputMode === "search" ? "bg-[#2a9d8f] text-white shadow-xs" : "text-zinc-600 hover:text-zinc-900"
+                    className={`px-3 py-1 font-bold uppercase tracking-wider rounded-sm transition-colors cursor-pointer ${
+                      b2bInputMode === "search"
+                        ? "bg-teal-700 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Yes
+                    Yes (Auto-Transfer Stock)
                   </button>
                 </div>
               </div>
@@ -284,7 +326,7 @@ export function BillingPosFormView({
               {b2bInputMode === "search" && (
                 <div className="relative pt-1">
                   <div className="relative">
-                    <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-400" />
+                    <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
                       value={shopSearchQuery}
@@ -293,26 +335,28 @@ export function BillingPosFormView({
                         setIsShopSearchFocused(true);
                       }}
                       onFocus={() => setIsShopSearchFocused(true)}
-                      placeholder="Search shop by name or partial GSTIN..."
-                      className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#2a9d8f]"
+                      placeholder="Search registered pharmacy by shop name or partial GSTIN..."
+                      className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-slate-300 rounded-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
                     />
                   </div>
 
                   {isShopSearchFocused && shopSearchResults.length > 0 && (
-                    <div className="absolute left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-50 divide-y divide-zinc-100">
+                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-300 rounded-sm shadow-lg max-h-48 overflow-y-auto z-50 divide-y divide-slate-200">
                       {shopSearchResults.map((shop) => (
                         <div
                           key={shop.id}
                           onClick={() => handleSelectShop(shop)}
-                          className="p-3 hover:bg-teal-50/50 cursor-pointer text-xs flex justify-between items-center"
+                          className="p-3 hover:bg-teal-50/70 cursor-pointer text-xs flex justify-between items-center"
                         >
                           <div>
-                            <p className="font-bold text-zinc-900">{shop.shop_name}</p>
-                            <p className="text-zinc-500 text-[11px]">
-                              GSTIN: <span className="font-medium text-zinc-700">{shop.gstin}</span> | Ph: {shop.phone}
+                            <p className="font-bold text-slate-900">{shop.shop_name}</p>
+                            <p className="text-slate-500 text-[11px]">
+                              GSTIN: <span className="font-mono font-semibold text-slate-700">{shop.gstin}</span> | Ph: {shop.phone}
                             </p>
                           </div>
-                          <span className="text-[10px] font-semibold text-[#2a9d8f] bg-teal-50 px-2 py-1 rounded">Select</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800 bg-teal-50 border border-teal-200 px-2 py-1 rounded-sm">
+                            Select
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -324,11 +368,11 @@ export function BillingPosFormView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
-              label="Customer / Shop Name *"
+              label={billingType === "B2B" ? "Buyer Shop Name *" : "Customer Full Name *"}
               required
               value={buyerName}
               onChange={(e) => setBuyerName(e.target.value)}
-              placeholder="Enter full name"
+              placeholder={billingType === "B2B" ? "Registered Pharmacy Name" : "Enter full name"}
             />
             <Input
               label="Mobile Number *"
@@ -350,8 +394,8 @@ export function BillingPosFormView({
                 label="GSTIN *"
                 required
                 value={buyerGstin}
-                onChange={(e) => setBuyerGstin(e.target.value)}
-                placeholder="GSTIN number for B2B"
+                onChange={(e) => setBuyerGstin(e.target.value.toUpperCase())}
+                placeholder="15-character GSTIN"
               />
             ) : (
               <>
@@ -370,52 +414,61 @@ export function BillingPosFormView({
               </>
             )}
           </div>
+
           <Input
-            label="Invoice Note / Instructions"
+            label="Invoice Note / Dosage Instructions"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. Take after meals"
+            placeholder="e.g. Take after meals twice daily"
           />
         </div>
       </div>
 
-      <div className="lg:col-span-4 space-y-6">
-        <div className="bg-white p-6 rounded-lg border border-zinc-200 shadow-xs space-y-4 sticky top-20">
-          <h2 className="text-sm font-bold text-zinc-900 uppercase tracking-wide border-b border-zinc-100 pb-3">Billing Summary</h2>
+      <div className="lg:col-span-4 space-y-5">
+        <div className="bg-white p-6 rounded-sm border border-slate-300 shadow-sm space-y-4 sticky top-6">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+            <Receipt className="w-4 h-4 text-teal-700" />
+            <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              3. Billing Summary
+            </h2>
+          </div>
 
-          <div className="space-y-3 text-xs text-zinc-600 border-b border-zinc-100 pb-4">
+          <div className="space-y-2.5 text-xs text-slate-600 border-b border-slate-200 pb-4">
             <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span className="font-medium text-zinc-900">₹{subTotal.toFixed(2)}</span>
+              <span>Subtotal (Taxable)</span>
+              <span className="font-semibold text-slate-900">₹{subTotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Total GST</span>
-              <span className="font-medium text-zinc-900">₹{totalGst.toFixed(2)}</span>
+              <span>Total GST (CGST + SGST)</span>
+              <span className="font-semibold text-slate-900">₹{totalGst.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between gap-2 pt-1">
               <span>Flat Discount (₹)</span>
               <input
                 type="number"
                 min={0}
+                step="0.01"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
-                className="w-24 px-2 py-1 border border-zinc-300 rounded text-right text-xs focus:outline-none focus:ring-1 focus:ring-[#2a9d8f]"
+                className="w-24 px-2.5 py-1 border border-slate-300 rounded-sm text-right text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
               />
             </div>
           </div>
 
-          <div className="flex justify-between items-center text-sm font-bold text-zinc-900 pt-1">
-            <span>Net Payable</span>
-            <span className="text-base text-[#2a9d8f]">₹{netAmount.toFixed(2)}</span>
+          <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-1">
+            <span className="uppercase tracking-wider text-xs">Net Payable</span>
+            <span className="text-lg text-teal-700">₹{netAmount.toFixed(2)}</span>
           </div>
 
-          <div className="space-y-3 pt-2 border-t border-zinc-100">
+          <div className="space-y-3 pt-3 border-t border-slate-200">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">Payment Mode</label>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                Payment Mode
+              </label>
               <select
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#2a9d8f]"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
               >
                 <option value="CASH">Cash</option>
                 <option value="UPI">UPI</option>
@@ -426,11 +479,13 @@ export function BillingPosFormView({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">Payment Status</label>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-700 mb-1">
+                Payment Status
+              </label>
               <select
                 value={paymentStatus}
                 onChange={(e) => setPaymentStatus(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#2a9d8f]"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
               >
                 <option value="PAID">Paid</option>
                 <option value="UNPAID">Unpaid</option>
@@ -439,16 +494,22 @@ export function BillingPosFormView({
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+          {error && (
+            <div className="px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-xs text-red-700 font-semibold">
+              {error}
+            </div>
+          )}
+
           {successMessage && (
-            <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 rounded-md text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-[#2a9d8f]" />
+            <div className="px-3 py-2.5 bg-teal-50 border border-teal-200 text-teal-800 rounded-sm text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-teal-700 shrink-0" />
               <span>{successMessage}</span>
             </div>
           )}
 
           <Button type="submit" loading={loading} className="w-full justify-center">
-            <ShoppingCart className="w-4 h-4 mr-2" /> Generate Invoice
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Generate Tax Invoice
           </Button>
         </div>
       </div>

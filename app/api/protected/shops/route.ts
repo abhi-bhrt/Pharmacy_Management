@@ -1,3 +1,4 @@
+// app/api/protected/shops/route.ts
 import {
   getShopByOwnerService,
   createShopService,
@@ -21,7 +22,7 @@ export const GET = withApiHandler(async (req: Request) => {
   const shop = await getShopByOwnerService(ownerId);
 
   if (!shop) {
-    throw AppError.notFound("Shop");
+    throw AppError.notFound("Shop profile not found");
   }
 
   return sendSuccess<{ shop: ShopResponse }>({ shop });
@@ -45,30 +46,30 @@ export const POST = withApiHandler(async (req: Request) => {
   } = body;
 
   if (
-    !shopName ||
-    !phone ||
-    !email ||
-    !drugLicenceNumber ||
-    !pharmacistName ||
-    !pharmacistRegistrationNumber ||
-    !gstin ||
+    !shopName?.trim() ||
+    !phone?.trim() ||
+    !email?.trim() ||
+    !drugLicenceNumber?.trim() ||
+    !pharmacistName?.trim() ||
+    !pharmacistRegistrationNumber?.trim() ||
+    !gstin?.trim() ||
     !address
   ) {
-    throw new AppError("All shop details and address fields are required.", 400, "VALIDATION_ERROR");
+    throw AppError.validation("All shop details and address fields are required");
   }
 
   const newShop = await createShopService({
     ownerId,
-    shopName,
-    phone,
-    email,
-    drugLicenceNumber,
-    pharmacistName,
-    pharmacistRegistrationNumber,
-    gstin,
-    location,
+    shopName: shopName.trim(),
+    phone: phone.trim(),
+    email: email.trim().toLowerCase(),
+    drugLicenceNumber: drugLicenceNumber.trim(),
+    pharmacistName: pharmacistName.trim(),
+    pharmacistRegistrationNumber: pharmacistRegistrationNumber.trim(),
+    gstin: gstin.trim(),
+    location: location?.trim() || "",
     address,
-    imageId,
+    imageId: imageId || null,
   });
 
   return sendSuccess<{ shop: ShopResponse }>({ shop: newShop }, "Shop created successfully", 201);

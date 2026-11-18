@@ -1,3 +1,4 @@
+// services/medicines/medicine-update.service.ts
 import type { PoolClient } from "pg";
 import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
@@ -19,72 +20,86 @@ async function executeUpdateMedicine(
 ): Promise<Medicine> {
   const { id, shopId, ...updates } = input;
 
-  const existing = await client.query<Medicine>(
-    `SELECT * FROM medicines WHERE id = $1 AND shop_id = $2 LIMIT 1`,
-    [id, shopId]
-  );
-
-  if (existing.rows.length === 0) {
-    throw AppError.notFound("Medicine");
-  }
-
-  const currentMed = existing.rows[0];
-  const targetBatch = updates.batchNo ? updates.batchNo.trim() : currentMed.batch_no;
-  const targetHsn = updates.hsnCode ? updates.hsnCode.trim() : currentMed.hsn_code;
-
-  if (updates.batchNo || updates.hsnCode) {
-    const duplicateCheck = await client.query<{ id: string }>(
-      `SELECT id FROM medicines 
-       WHERE shop_id = $1 AND batch_no = $2 AND hsn_code = $3 AND id != $4 
-       LIMIT 1`,
-      [shopId, targetBatch, targetHsn, id]
+  try {
+    const existing = await client.query<Medicine>(
+      `SELECT * FROM medicines WHERE id = $1 AND shop_id = $2 LIMIT 1`,
+      [id, shopId]
     );
 
-    if (duplicateCheck.rows.length > 0) {
-      throw AppError.conflict(
-        "Another item already uses this Batch Number and HSN Code in this shop"
+    if (existing.rows.length === 0) {
+      throw AppError.notFound("Medicine not found");
+    }
+
+    const currentMed = existing.rows[0];
+    const targetBatch = updates.batchNo ? updates.batchNo.trim() : currentMed.batch_no;
+    const targetHsn = updates.hsnCode ? updates.hsnCode.trim() : currentMed.hsn_code;
+
+    if (updates.batchNo || updates.hsnCode) {
+      const duplicateCheck = await client.query<{ id: string }>(
+        `SELECT id FROM medicines 
+         WHERE shop_id = $1 AND LOWER(batch_no) = LOWER($2) AND LOWER(hsn_code) = LOWER($3) AND id != $4 
+         LIMIT 1`,
+        [shopId, targetBatch, targetHsn, id]
       );
+
+      if (duplicateCheck.rows.length > 0) {
+        throw AppError.conflict(
+          "Another item already uses this Batch Number and HSN Code in this shop"
+        );
+      }
     }
-  }
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  let index = 1;
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let index = 1;
 
-  const mapping: Record<keyof Omit<UpdateMedicineInput, "id" | "shopId">, string> = {
-    description: "description",
-    batchNo: "batch_no",
-    mrp: "mrp",
-    rate: "rate",
-    gstRate: "gst_rate",
-    expDate: "exp_date",
-    quantity: "quantity",
-    hsnCode: "hsn_code",
-    packSize: "pack_size",
-  };
+    const mapping: Record<keyof Omit<UpdateMedicineInput, "id" | "shopId">, string> = {
+      description: "description",
+      batchNo: "batch_no",
+      mrp: "mrp",
+      rate: "rate",
+      gstRate: "gst_rate",
+      expDate: "exp_date",
+      quantity: "quantity",
+      hsnCode: "hsn_code",
+      packSize: "pack_size",
+    };
 
-  for (const [key, column] of Object.entries(mapping)) {
-    const rawValue = updates[key as keyof typeof mapping];
-    if (rawValue !== undefined) {
-      fields.push(`${column} = $${index++}`);
-      values.push(typeof rawValue === "string" ? rawValue.trim() : rawValue);
+    for (const [key, column] of Object.entries(mapping)) {
+      const rawValue = updates[key as keyof typeof mapping];
+      if (rawValue !== undefined) {
+        fields.push(`${column} = $${index++}`);
+        values.push(typeof rawValue === "string" ? rawValue.trim() : rawValue);
+      }
     }
+
+    if (fields.length === 0) {
+      return currentMed;
+    }
+
+    fields.push(`updated_at = NOW()`);
+    values.push(id, shopId);
+
+    const queryText = `
+      UPDATE medicines 
+      SET ${fields.join(", ")}
+      WHERE id = $${index++} AND shop_id = $${index}
+      RETURNING *
+    `;
+
+    const res = await client.query<Medicine>(queryText, values);
+    return res.rows[0];
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (typeof error === "object" && error !== null && "code" in error) {
+      if (error.code === "22P02") {
+        throw AppError.validation("Invalid Medicine ID format");
+      }
+      if (error.code === "23505") {
+        throw AppError.conflict("Duplicate Batch Number and HSN Code");
+      }
+    }
+    console.error("Error executing updateMedicineService:", error);
+    throw AppError.internal("Internal server error while updating medicine");
   }
-
-  if (fields.length === 0) {
-    return currentMed;
-  }
-
-  fields.push(`updated_at = NOW()`);
-  values.push(id, shopId);
-
-  const queryText = `
-    UPDATE medicines 
-    SET ${fields.join(", ")}
-    WHERE id = $${index++} AND shop_id = $${index}
-    RETURNING *
-  `;
-
-  const res = await client.query<Medicine>(queryText, values);
-  return res.rows[0];
 }

@@ -18,9 +18,12 @@ export const GET = withApiHandler(async (req: Request) => {
   const shopId = await getShopIdByOwner(userId);
 
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") || "";
-  const page = parseInt(searchParams.get("page") || "1", 10);
-  const limit = parseInt(searchParams.get("limit") || "15", 10);
+  const search = searchParams.get("search")?.trim() || "";
+  const rawPage = parseInt(searchParams.get("page") || "1", 10);
+  const rawLimit = parseInt(searchParams.get("limit") || "15", 10);
+
+  const page = Number.isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+  const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 15 : Math.min(rawLimit, 100);
 
   const data: InvoiceListResponse = await getInvoicesService({
     shopId,
@@ -40,7 +43,7 @@ export const POST = withApiHandler(async (req: Request) => {
   const {
     buyer,
     items,
-    buyerShopId: buyerShopId, // Extracted from payload if a registered B2B shop was selected
+    buyerShopId,
     discount = 0,
     paymentMode = "CASH",
     paymentStatus = "PAID",
@@ -49,20 +52,25 @@ export const POST = withApiHandler(async (req: Request) => {
     note,
   } = body;
 
-  if (!buyer?.name || !buyer?.phone) {
-    throw new AppError("Customer name and phone number are required.", 400, "VALIDATION_ERROR");
+  if (!buyer?.name?.trim() || !buyer?.phone?.trim()) {
+    throw AppError.validation("Customer name and phone number are required");
   }
 
   if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new AppError("At least one item must be added to the invoice.", 400, "VALIDATION_ERROR");
+    throw AppError.validation("At least one item must be added to the invoice");
+  }
+
+  const parsedDiscount = Number(discount);
+  if (Number.isNaN(parsedDiscount) || parsedDiscount < 0) {
+    throw AppError.validation("Discount must be a valid non-negative number");
   }
 
   const invoice: InvoiceFullResponse = await createInvoiceService({
     shopId,
-    buyerShopId: buyerShopId || null, // Passed to service for inventory addition
+    buyerShopId: buyerShopId || null,
     buyer,
     items,
-    discount: Number(discount) || 0,
+    discount: parsedDiscount,
     paymentMode,
     paymentStatus,
     doctorName,
@@ -70,5 +78,9 @@ export const POST = withApiHandler(async (req: Request) => {
     note,
   });
 
-  return sendSuccess<{ invoice: InvoiceFullResponse }>({ invoice }, "Invoice generated successfully", 201);
+  return sendSuccess<{ invoice: InvoiceFullResponse }>(
+    { invoice },
+    "Invoice generated successfully",
+    201
+  );
 });

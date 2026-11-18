@@ -1,10 +1,11 @@
+// types/invoice.types.ts
 import type { BaseEntity, PaginationParams } from "./common.types";
 
 export type PaymentMode = "CASH" | "UPI" | "CARD" | "NET_BANKING" | "CREDIT";
 export type PaymentStatus = "PAID" | "UNPAID" | "PARTIALLY_PAID";
 
-
-export interface InvoiceSummary extends Omit<Invoice, "updated_at" | "doctor_reg_no" | "note" | "items"> {
+export interface InvoiceSummary
+  extends Omit<Invoice, "updated_at" | "doctor_reg_no" | "note" | "items"> {
   buyer_name: string;
   buyer_phone: string;
   buyer_gstin: string | null;
@@ -22,9 +23,6 @@ export interface InvoiceListResponse {
   limit: number;
 }
 
-/**
- * Core Buyer (Customer) database entity.
- */
 export interface Buyer extends BaseEntity {
   name: string;
   phone: string;
@@ -36,9 +34,6 @@ export interface Buyer extends BaseEntity {
   address_id: string | null;
 }
 
-/**
- * Individual line item within an Invoice.
- */
 export interface InvoiceItem {
   id: string;
   invoice_id: string;
@@ -60,9 +55,6 @@ export interface InvoiceItem {
   created_at: string;
 }
 
-/**
- * Core Invoice header database entity.
- */
 export interface Invoice extends BaseEntity {
   shop_id: string;
   buyer_id: string;
@@ -81,9 +73,6 @@ export interface Invoice extends BaseEntity {
   items?: InvoiceItem[];
 }
 
-/**
- * Buyer details input when generating an invoice.
- */
 export interface BuyerInput {
   name: string;
   phone: string;
@@ -93,9 +82,6 @@ export interface BuyerInput {
   isB2b?: boolean;
 }
 
-/**
- * Line item input when generating an invoice.
- */
 export interface CreateInvoiceItemInput {
   medicineId: string;
   quantity: number;
@@ -103,11 +89,9 @@ export interface CreateInvoiceItemInput {
   discountPercent?: number;
 }
 
-/**
- * Complete payload for generating a new invoice.
- */
 export interface CreateInvoiceInput {
   shopId: string;
+  buyerShopId?: string | null;
   buyer: BuyerInput;
   items: CreateInvoiceItemInput[];
   discount?: number;
@@ -118,9 +102,6 @@ export interface CreateInvoiceInput {
   note?: string | null;
 }
 
-/**
- * Complete Invoice details returned by GET /api/invoices/[id].
- */
 export interface InvoiceFullResponse extends Invoice {
   items: InvoiceItem[];
   buyer: Pick<Buyer, "name" | "phone" | "email" | "gstin">;

@@ -1,22 +1,13 @@
 // hooks/useMedicines.ts
+"use client";
+
 import { useState, useEffect, useCallback } from "react";
 import { useDebounce } from "./useDebounce";
+import type { MedicineItem } from "@/types";
 
-export interface MedicineItem {
-  id: string;
-  shop_id: string;
-  description: string;
-  batch_no: string;
-  mrp: string;
-  rate: string;
-  gst_rate: string;
-  exp_date: string;
-  quantity: number;
-  hsn_code: string;
-  pack_size: string;
-}
+export type { MedicineItem };
 
-export function useMedicines() {
+export function useMedicines(limit: number = 15) {
   const [medicines, setMedicines] = useState<MedicineItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,24 +17,40 @@ export function useMedicines() {
 
   const debouncedSearch = useDebounce(search, 400);
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
   const fetchMedicines = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/protected/medicines?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=15`, {
+      setError(null);
+
+      const params = new URLSearchParams({
+        search: debouncedSearch.trim(),
+        page: String(page),
+        limit: String(limit),
+      });
+
+      const res = await fetch(`/api/protected/medicines?${params.toString()}`, {
         credentials: "include",
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || "Failed to load inventory");
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error?.message || "Failed to load inventory");
       }
-      setMedicines(data.data.medicines || []);
-      setTotal(data.data.total || 0);
-    } catch (err: any) {
-      setError(err.message);
+
+      setMedicines(data.data?.medicines || []);
+      setTotal(data.data?.total || 0);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load inventory";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, page]);
+  }, [debouncedSearch, page, limit]);
 
   useEffect(() => {
     fetchMedicines();
@@ -54,9 +61,10 @@ export function useMedicines() {
     loading,
     error,
     search,
-    setSearch,
+    setSearch: handleSearchChange,
     page,
     setPage,
+    limit,
     total,
     refresh: fetchMedicines,
   };

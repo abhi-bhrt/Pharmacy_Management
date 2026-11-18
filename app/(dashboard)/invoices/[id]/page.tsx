@@ -15,6 +15,8 @@ function InvoiceDetailContent() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchDetails() {
       try {
         const [invRes, shopRes] = await Promise.all([
@@ -22,26 +24,48 @@ function InvoiceDetailContent() {
           fetch(`/api/protected/shops`, { credentials: "include" }),
         ]);
 
-        const invData = await invRes.json();
-        const shopData = await shopRes.json();
+        const [invData, shopData] = await Promise.all([
+          invRes.json().catch(() => null),
+          shopRes.json().catch(() => null),
+        ]);
 
-        if (invRes.ok && invData.success) {
+        if (!isMounted) return;
+
+        if (invRes.ok && invData?.success) {
           setInvoice(invData.data.invoice);
         }
-        if (shopRes.ok && shopData.success) {
+        if (shopRes.ok && shopData?.success) {
           setShop(shopData.data.shop);
         }
       } catch (err) {
         console.error("Failed to load invoice receipt:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
-    if (id) fetchDetails();
+
+    if (id) {
+      fetchDetails();
+    } else {
+      setLoading(false);
+    }
+
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
-  if (loading) return <Spinner text="Loading invoice receipt..." />;
-  if (!invoice) return <div className="text-center py-12 text-zinc-500">Invoice not found.</div>;
+  if (loading) {
+    return <Spinner text="Loading invoice receipt..." />;
+  }
+
+  if (!invoice) {
+    return (
+      <div className="max-w-xl mx-auto bg-white p-8 rounded-sm border border-slate-300 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Invoice record not found.
+      </div>
+    );
+  }
 
   return <InvoiceReceipt invoice={invoice} shop={shop} />;
 }

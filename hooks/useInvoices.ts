@@ -1,4 +1,6 @@
 // hooks/useInvoices.ts
+"use client";
+
 import { useState, useEffect, useCallback } from "react";
 import { useDebounce } from "./useDebounce";
 
@@ -14,7 +16,7 @@ export interface InvoiceSummaryItem {
   item_count: number;
 }
 
-export function useInvoices() {
+export function useInvoices(limit: number = 15) {
   const [invoices, setInvoices] = useState<InvoiceSummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,24 +26,40 @@ export function useInvoices() {
 
   const debouncedSearch = useDebounce(search, 400);
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
   const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/protected/invoices?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=15`, {
+      setError(null);
+
+      const params = new URLSearchParams({
+        search: debouncedSearch.trim(),
+        page: String(page),
+        limit: String(limit),
+      });
+
+      const res = await fetch(`/api/protected/invoices?${params.toString()}`, {
         credentials: "include",
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || "Failed to load invoices");
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error?.message || "Failed to load invoices");
       }
-      setInvoices(data.data.invoices || []);
-      setTotal(data.data.total || 0);
-    } catch (err: any) {
-      setError(err.message);
+
+      setInvoices(data.data?.invoices || []);
+      setTotal(data.data?.total || 0);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load invoices";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, page]);
+  }, [debouncedSearch, page, limit]);
 
   useEffect(() => {
     fetchInvoices();
@@ -52,9 +70,10 @@ export function useInvoices() {
     loading,
     error,
     search,
-    setSearch,
+    setSearch: handleSearchChange,
     page,
     setPage,
+    limit,
     total,
     refresh: fetchInvoices,
   };

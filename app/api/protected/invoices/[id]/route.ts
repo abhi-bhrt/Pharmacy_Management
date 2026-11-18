@@ -1,3 +1,4 @@
+// app/api/protected/invoices/[id]/route.ts
 import { getShopIdByOwner } from "@/services/medicines";
 import { getInvoiceDetailsByIdService } from "@/services/invoices";
 import { withApiHandler, sendSuccess } from "@/lib/api/api-handler";
@@ -16,7 +17,6 @@ export const GET = withApiHandler(
   async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
     const userId = getAuthenticatedUserId(req);
     const shopId = await getShopIdByOwner(userId);
-    
     const { id } = await params;
 
     const invoice: InvoiceFullResponse = await getInvoiceDetailsByIdService(id, shopId);

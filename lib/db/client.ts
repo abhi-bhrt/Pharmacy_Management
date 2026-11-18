@@ -1,3 +1,4 @@
+// lib/db/client.ts
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { env } from "@/config/env";
 
@@ -9,13 +10,14 @@ const globalForPg = globalThis as unknown as {
 
 /**
  * Singleton PostgreSQL connection pool.
+ * Prevents connection exhaustion during Next.js HMR in development.
  */
 export const pool: Pool =
   globalForPg.pool ??
   new Pool({
     connectionString: env.DATABASE_URL,
     ssl: env.isProduction ? { rejectUnauthorized: false } : false,
-    max: 10,
+    max: 15,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
   });
@@ -23,6 +25,11 @@ export const pool: Pool =
 if (!env.isProduction) {
   globalForPg.pool = pool;
 }
+
+// Prevent unhandled 'error' events on idle clients from crashing the Node process
+pool.on("error", (err) => {
+  console.error("[DB Pool] Unexpected error on idle PostgreSQL client:", err);
+});
 
 /**
  * Type guard to distinguish a Pool instance from a checked-out PoolClient.
@@ -39,14 +46,22 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   params?: unknown[]
 ): Promise<QueryResult<T>> {
   const start = Date.now();
-  const result = await pool.query<T>(text, params);
-  const duration = Date.now() - start;
+  try {
+    const result = await pool.query<T>(text, params);
+    const duration = Date.now() - start;
 
-  if (env.isDevelopment) {
-    console.debug(`[DB Query] (${duration}ms, rows: ${result.rowCount}):`, text.trim());
+    if (env.isDevelopment) {
+      console.debug(`[DB Query] (${duration}ms, rows: ${result.rowCount}):`, text.trim());
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[DB Query Error]:", {
+      query: text.trim(),
+      error,
+    });
+    throw error;
   }
-
-  return result;
 }
 
 /**
@@ -63,7 +78,11 @@ export async function withTransaction<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("[DB Transaction] Rollback failed:", rollbackError);
+    }
     throw error;
   } finally {
     client.release();

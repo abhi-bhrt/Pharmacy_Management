@@ -1,3 +1,4 @@
+// app/api/protected/medicines/[id]/route.ts
 import {
   getShopIdByOwner,
   getMedicineByIdService,
@@ -34,17 +35,24 @@ export const PATCH = withApiHandler(
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
-    if (body.quantity !== undefined && Number(body.quantity) < 0) {
-      throw new AppError("Quantity cannot be negative.", 400, "VALIDATION_ERROR");
+    if (body.quantity !== undefined) {
+      const parsedQuantity = Number(body.quantity);
+      if (!Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
+        throw AppError.validation("Quantity must be a valid non-negative whole number");
+      }
     }
 
     const updated: Medicine = await updateMedicineService({
       id,
       shopId,
-      ...body,
-      ...(body.mrp !== undefined && { mrp: String(body.mrp) }),
-      ...(body.rate !== undefined && { rate: String(body.rate) }),
-      ...(body.gstRate !== undefined && { gstRate: String(body.gstRate) }),
+      ...(body.description !== undefined && { description: String(body.description).trim() }),
+      ...(body.batchNo !== undefined && { batchNo: String(body.batchNo).trim() }),
+      ...(body.hsnCode !== undefined && { hsnCode: String(body.hsnCode).trim() }),
+      ...(body.packSize !== undefined && { packSize: String(body.packSize).trim() }),
+      ...(body.expDate !== undefined && { expDate: String(body.expDate).trim() }),
+      ...(body.mrp !== undefined && { mrp: String(Number(body.mrp)) }),
+      ...(body.rate !== undefined && { rate: String(Number(body.rate)) }),
+      ...(body.gstRate !== undefined && { gstRate: String(Number(body.gstRate)) }),
       ...(body.quantity !== undefined && { quantity: Number(body.quantity) }),
     });
 
@@ -59,6 +67,6 @@ export const DELETE = withApiHandler(
     const { id } = await params;
 
     const result = await deleteMedicineService(id, shopId);
-    return sendSuccess<{ message: string }>(result);
+    return sendSuccess<{ message: string }>(result, "Medicine removed successfully");
   }
 );

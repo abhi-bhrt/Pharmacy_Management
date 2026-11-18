@@ -1,4 +1,4 @@
-// services/invoices.ts (or wherever createInvoiceService resides)
+// services/invoices/invoice-create.service.ts
 import type { PoolClient } from "pg";
 import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
@@ -29,13 +29,8 @@ interface ProcessedInvoiceItem {
   totalAmount: string;
 }
 
-// Extend your CreateInvoiceInput type or interface to optionally include buyerShopId
-export interface ExtendedCreateInvoiceInput extends CreateInvoiceInput {
-  buyerShopId?: string | null;
-}
-
 export async function createInvoiceService(
-  input: ExtendedCreateInvoiceInput,
+  input: CreateInvoiceInput,
   executor: DbExecutor = pool
 ): Promise<InvoiceFullResponse> {
   if (isPool(executor)) {
@@ -45,7 +40,7 @@ export async function createInvoiceService(
 }
 
 async function executeCreateInvoice(
-  input: ExtendedCreateInvoiceInput,
+  input: CreateInvoiceInput,
   client: PoolClient
 ): Promise<InvoiceFullResponse> {
   const {
@@ -62,7 +57,11 @@ async function executeCreateInvoice(
   } = input;
 
   if (!items || items.length === 0) {
-    throw new AppError("Invoice must contain at least one item", 400, "VALIDATION_ERROR");
+    throw AppError.validation("Invoice must contain at least one item");
+  }
+
+  if (buyerShopId && buyerShopId === shopId) {
+    throw AppError.validation("Cannot generate a B2B transfer invoice to your own shop");
   }
 
   const buyerId = await findOrCreateBuyer(buyer, client);
@@ -73,10 +72,13 @@ async function executeCreateInvoice(
   const processedItems: ProcessedInvoiceItem[] = [];
 
   for (const item of items) {
+    if (!item.medicineId || !Number.isInteger(item.quantity) || item.quantity < 1) {
+      throw AppError.validation("Each invoice item must have a valid medicine ID and quantity >= 1");
+    }
+
     const freeQty = item.freeQuantity ?? 0;
     const totalDeductQty = item.quantity + freeQty;
 
-    // 1. Fetch medicine from seller's shop
     const medRes = await client.query<Medicine>(
       `SELECT * FROM medicines WHERE id = $1 AND shop_id = $2 FOR UPDATE`,
       [item.medicineId, shopId]
@@ -109,7 +111,6 @@ async function executeCreateInvoice(
     cgstTotal += cgstAmount;
     sgstTotal += sgstAmount;
 
-    // 2. Deduct stock from Seller Shop
     await client.query(
       `UPDATE medicines 
        SET quantity = quantity - $1, updated_at = NOW() 
@@ -117,27 +118,22 @@ async function executeCreateInvoice(
       [totalDeductQty, med.id]
     );
 
-    // 3. If B2B and buyerShopId is provided, add/transfer stock to Buyer's Shop inventory
     if (buyerShopId) {
-      const totalReceivedQty = item.quantity + freeQty;
-
-      // Check if the same medicine (by batch_no and hsn_code or description) exists in buyer's shop inventory
       const buyerMedRes = await client.query<Medicine>(
         `SELECT id, quantity FROM medicines 
-         WHERE shop_id = $1 AND batch_no = $2 AND hsn_code = $3 LIMIT 1`,
+         WHERE shop_id = $1 AND LOWER(batch_no) = LOWER($2) AND LOWER(hsn_code) = LOWER($3)
+         LIMIT 1`,
         [buyerShopId, med.batch_no, med.hsn_code]
       );
 
       if (buyerMedRes.rows.length > 0) {
-        // Update existing batch quantity in buyer's shop
         await client.query(
           `UPDATE medicines 
            SET quantity = quantity + $1, updated_at = NOW() 
            WHERE id = $2`,
-          [totalReceivedQty, buyerMedRes.rows[0].id]
+          [totalDeductQty, buyerMedRes.rows[0].id]
         );
       } else {
-        // Insert new medicine record into buyer's shop inventory
         await client.query(
           `INSERT INTO medicines (
             shop_id, description, batch_no, mrp, rate, 
@@ -152,7 +148,7 @@ async function executeCreateInvoice(
             med.rate,
             med.gst_rate,
             med.exp_date,
-            totalReceivedQty,
+            totalDeductQty,
             med.hsn_code,
             med.pack_size,
           ]
@@ -209,8 +205,8 @@ async function executeCreateInvoice(
   );
 
   const invoice = invoiceRes.rows[0];
-
   const createdItems: InvoiceItem[] = [];
+
   for (const item of processedItems) {
     const itemRes = await client.query<InvoiceItem>(
       `INSERT INTO invoice_items (

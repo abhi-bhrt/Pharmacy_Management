@@ -1,3 +1,4 @@
+// services/shops/shop-update.service.ts
 import type { PoolClient } from "pg";
 import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
@@ -8,6 +9,10 @@ export async function updateShopService(
   input: UpdateShopInput,
   executor: DbExecutor = pool
 ): Promise<ShopResponse> {
+  if (!input?.ownerId?.trim()) {
+    throw AppError.validation("Owner ID is required for updating shop");
+  }
+
   if (isPool(executor)) {
     return withTransaction((client) => executeUpdateShop(input, client), executor);
   }
@@ -26,7 +31,7 @@ async function executeUpdateShop(
   );
 
   if (currentShopRes.rows.length === 0) {
-    throw AppError.notFound("Shop");
+    throw AppError.notFound("Shop not found");
   }
 
   const currentShop = currentShopRes.rows[0];
@@ -34,11 +39,11 @@ async function executeUpdateShop(
   if (address && Object.keys(address).length > 0) {
     await client.query(
       `UPDATE addresses 
-       SET pincode = COALESCE($1, pincode),
-           state = COALESCE($2, state),
-           country = COALESCE($3, country),
-           district = COALESCE($4, district),
-           area = COALESCE($5, area),
+       SET pincode = COALESCE(NULLIF($1, ''), pincode),
+           state = COALESCE(NULLIF($2, ''), state),
+           country = COALESCE(NULLIF($3, ''), country),
+           district = COALESCE(NULLIF($4, ''), district),
+           area = COALESCE(NULLIF($5, ''), area),
            updated_at = NOW()
        WHERE id = $6`,
       [
@@ -94,7 +99,7 @@ async function executeUpdateShop(
 
   const updatedShop = await getShopByOwnerService(ownerId, client);
   if (!updatedShop) {
-    throw AppError.notFound("Shop");
+    throw AppError.notFound("Updated shop profile not found");
   }
 
   return updatedShop;

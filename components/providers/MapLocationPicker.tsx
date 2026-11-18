@@ -1,243 +1,315 @@
+// components/features/shop/MapLocationPicker.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Input } from "@/components/ui/Input";
-import { MapPin, ExternalLink, Globe, Search, Navigation } from "lucide-react";
+import { ExternalLink, Globe, Search, Navigation, Loader2 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 interface MapLocationPickerProps {
-    value: string;
-    initialLocationUrl?: string;
-    onChange: (url: string) => void;
+  value: string;
+  initialLocationUrl?: string;
+  onChange: (url: string) => void;
 }
 
 export function MapLocationPicker({
-    value,
-    initialLocationUrl = "",
-    onChange,
+  value,
+  initialLocationUrl = "",
+  onChange,
 }: MapLocationPickerProps) {
-    const mapContainerRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<any>(null);
-    const markerRef = useRef<any>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<import("leaflet").Map | null>(null);
+  const markerRef = useRef<import("leaflet").Marker | null>(null);
 
-    const [searchQuery, setSearchQuery] = useState("");
-    const [locating, setLocating] = useState(false);
-    const [error, setError] = useState("");
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-    // Helper: Generate Google Maps URL from coordinates & auto-fill parent state
-    const updatePinnedLocation = (lat: number, lng: number, placeName?: string) => {
-        const query = placeName
-            ? `${placeName} (${lat.toFixed(6)},${lng.toFixed(6)})`
-            : `${lat.toFixed(6)},${lng.toFixed(6)}`;
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-        onChange(mapUrl);
-    };
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [error, setError] = useState("");
 
-    // Initialize Interactive Map
-    useEffect(() => {
-        let isMounted = true;
+  const updatePinnedLocation = useCallback(
+    (lat: number, lng: number, placeName?: string) => {
+      const query = placeName
+        ? `${placeName} (${lat.toFixed(6)},${lng.toFixed(6)})`
+        : `${lat.toFixed(6)},${lng.toFixed(6)}`;
+      const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        query
+      )}`;
+      onChangeRef.current(mapUrl);
+    },
+    []
+  );
 
-        const initMap = async () => {
-            const L = (await import("leaflet")).default;
-            if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
+  // Sync external URL changes (e.g., manual paste or async shop load) to map view & pin
+  useEffect(() => {
+    const rawUrl = value || initialLocationUrl;
+    if (!rawUrl || !mapInstanceRef.current || !markerRef.current) return;
 
-            // Fix default Leaflet marker icon issue in Next.js
-            const customIcon = L.icon({
-                iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-                iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-                shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-            });
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(rawUrl);
+      } catch {
+        return rawUrl;
+      }
+    })();
 
-            // Default center (Kolkata) or parse initialLocationUrl if present
-            let defaultLat = 22.5726;
-            let defaultLng = 88.3639;
+    const coordMatch = decoded.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      const currentPos = markerRef.current.getLatLng();
 
-            const coordMatch = (value || initialLocationUrl).match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
-            if (coordMatch) {
-                defaultLat = parseFloat(coordMatch[1]);
-                defaultLng = parseFloat(coordMatch[2]);
-            }
+      if (
+        !Number.isNaN(lat) &&
+        !Number.isNaN(lng) &&
+        (Math.abs(currentPos.lat - lat) > 0.0001 ||
+          Math.abs(currentPos.lng - lng) > 0.0001)
+      ) {
+        mapInstanceRef.current.setView([lat, lng], 16);
+        markerRef.current.setLatLng([lat, lng]);
+      }
+    }
+  }, [value, initialLocationUrl]);
 
-            const map = L.map(mapContainerRef.current).setView([defaultLat, defaultLng], 15);
+  // Initialize Interactive Map
+  useEffect(() => {
+    let isMounted = true;
 
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                attribution: "&copy; OpenStreetMap contributors",
-            }).addTo(map);
+    const initMap = async () => {
+      const L = (await import("leaflet")).default;
+      if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
 
-            const marker = L.marker([defaultLat, defaultLng], {
-                draggable: true,
-                icon: customIcon,
-            }).addTo(map);
+      const customIcon = L.icon({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconRetinaUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        shadowUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+      });
 
-            // Auto-fill when marker is dragged
-            marker.on("dragend", () => {
-                const pos = marker.getLatLng();
-                updatePinnedLocation(pos.lat, pos.lng);
-            });
+      let defaultLat = 22.5726;
+      let defaultLng = 88.3639;
 
-            // Auto-fill immediately when user clicks anywhere on the map
-            map.on("click", async (e: any) => {
-                const { lat, lng } = e.latlng;
-                marker.setLatLng([lat, lng]);
-                updatePinnedLocation(lat, lng);
+      const rawUrl = value || initialLocationUrl;
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(rawUrl);
+        } catch {
+          return rawUrl;
+        }
+      })();
 
-                // Optional: Reverse geocode to get shop/street name automatically
-                try {
-                    const res = await fetch(
-                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-                    );
-                    const data = await res.json();
-                    if (data?.name || data?.display_name) {
-                        const label = data.name || data.display_name.split(",")[0];
-                        updatePinnedLocation(lat, lng, label);
-                    }
-                } catch {
-                    // Coordinates already saved above as fallback
-                }
-            });
+      const coordMatch = decoded.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+      if (coordMatch) {
+        defaultLat = parseFloat(coordMatch[1]);
+        defaultLng = parseFloat(coordMatch[2]);
+      }
 
-            mapInstanceRef.current = map;
-            markerRef.current = marker;
-        };
+      const map = L.map(mapContainerRef.current).setView(
+        [defaultLat, defaultLng],
+        15
+      );
 
-        initMap();
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
 
-        return () => {
-            isMounted = false;
-            if (mapInstanceRef.current) {
-                mapInstanceRef.current.remove();
-                mapInstanceRef.current = null;
-            }
-        };
-    }, []);
+      const marker = L.marker([defaultLat, defaultLng], {
+        draggable: true,
+        icon: customIcon,
+      }).addTo(map);
 
-    // Search location via OpenStreetMap Nominatim
-    const handleSearchCity = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!searchQuery.trim()) return;
-        setError("");
+      marker.on("dragend", () => {
+        const pos = marker.getLatLng();
+        updatePinnedLocation(pos.lat, pos.lng);
+      });
+
+      map.on("click", async (e: import("leaflet").LeafletMouseEvent) => {
+        const { lat, lng } = e.latlng;
+        marker.setLatLng([lat, lng]);
+        updatePinnedLocation(lat, lng);
 
         try {
-            const res = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`
-            );
-            const results = await res.json();
-            if (results && results.length > 0) {
-                const lat = parseFloat(results[0].lat);
-                const lon = parseFloat(results[0].lon);
-                mapInstanceRef.current?.setView([lat, lon], 17);
-                markerRef.current?.setLatLng([lat, lon]);
-                updatePinnedLocation(lat, lon, searchQuery.trim());
-            } else {
-                setError("Location not found. Try a nearby landmark or area.");
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.name || data?.display_name) {
+              const label = data.name || data.display_name.split(",")[0];
+              updatePinnedLocation(lat, lng, label);
             }
+          }
         } catch {
-            setError("Failed to search location.");
+          // Coordinates already saved as fallback
         }
+      });
+
+      mapInstanceRef.current = map;
+      markerRef.current = marker;
     };
 
-    // GPS Detect
-    const handleDetectLocation = () => {
-        if (!navigator.geolocation) {
-            setError("Geolocation is not supported by your browser");
-            return;
-        }
+    initMap();
 
-        setLocating(true);
-        setError("");
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                mapInstanceRef.current?.setView([latitude, longitude], 18);
-                markerRef.current?.setLatLng([latitude, longitude]);
-                updatePinnedLocation(latitude, longitude);
-                setLocating(false);
-            },
-            () => {
-                setError("Unable to retrieve your location. Check browser permissions.");
-                setLocating(false);
-            },
-            { timeout: 10000, enableHighAccuracy: true }
-        );
+    return () => {
+      isMounted = false;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markerRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updatePinnedLocation]);
 
-    return (
-        <div className="space-y-4">
-            {error && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-xs">
-                    {error}
-                </div>
-            )}
+  const handleSearchCity = async () => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
 
-            <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 space-y-4">
-                <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    handleSearchCity(e);
-                                }
-                            }}
-                            className="w-full pl-9 pr-3 py-2 border rounded-md text-sm border-zinc-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2a9d8f]"
-                            placeholder="Search area, street or landmark..."
-                        />
-                    </div>
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={handleSearchCity}
-                            className="px-4 py-2 bg-zinc-300 hover:bg-zinc-800 text-white rounded-md text-xs font-semibold transition-colors cursor-pointer shrink-0"
-                        >
-                            Find
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleDetectLocation}
-                            disabled={locating}
-                            className="px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-[#2a9d8f] border border-teal-200 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
-                        >
-                            <Navigation className={`w-3.5 h-3.5 ${locating ? "animate-spin" : ""}`} />
-                            <span className="hidden sm:inline">{locating ? "Locating..." : "Detect Location"}</span>
-                        </button>
-                    </div>
-                </div>
+    setSearching(true);
+    setError("");
 
-                {/* Interactive Map Container */}
-                <div
-                    ref={mapContainerRef}
-                    className="w-full h-72 rounded-lg overflow-hidden border border-zinc-300 z-0"
-                />
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+          trimmed
+        )}`
+      );
+      if (!res.ok) {
+        throw new Error("Search request failed");
+      }
 
-                <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                    <span>* Click anywhere on the map or drag the pin—the URL below updates automatically.</span>
-                    {value && (
-                        <a
-                            href={value}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-[#2a9d8f] hover:underline flex items-center gap-1 font-medium shrink-0"
-                        >
-                            <Globe className="w-3.5 h-3.5" />
-                            Test Google Map Link <ExternalLink className="w-3 h-3" />
-                        </a>
-                    )}
-                </div>
+      const results = await res.json();
+      if (Array.isArray(results) && results.length > 0) {
+        const lat = parseFloat(results[0].lat);
+        const lon = parseFloat(results[0].lon);
+        mapInstanceRef.current?.setView([lat, lon], 17);
+        markerRef.current?.setLatLng([lat, lon]);
+        updatePinnedLocation(lat, lon, trimmed);
+      } else {
+        setError("Location not found. Try a nearby landmark, street, or pincode.");
+      }
+    } catch {
+      setError("Failed to search location. Please try again or pin directly on the map.");
+    } finally {
+      setSearching(false);
+    }
+  };
 
-                <Input
-                    label="Google Map URL (Auto-filled)"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    placeholder="Click on the map above to auto-generate URL..."
-                />
-            </div>
-        </div>
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setLocating(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        mapInstanceRef.current?.setView([latitude, longitude], 18);
+        markerRef.current?.setLatLng([latitude, longitude]);
+        updatePinnedLocation(latitude, longitude);
+        setLocating(false);
+      },
+      () => {
+        setError("Unable to retrieve your location. Please check browser location permissions.");
+        setLocating(false);
+      },
+      { timeout: 10000, enableHighAccuracy: true }
     );
+  };
+
+  return (
+    <div className="space-y-3">
+      {error && (
+        <div className="px-3.5 py-2.5 bg-red-50 border border-red-200 text-red-700 rounded-sm text-xs font-medium">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-slate-50 border border-slate-300 rounded-sm p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (error) setError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSearchCity();
+                }
+              }}
+              className="w-full pl-9 pr-3 py-2 border rounded-sm text-xs sm:text-sm border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-700 focus:border-teal-700"
+              placeholder="Search area, street, pincode, or landmark..."
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSearchCity}
+              disabled={searching || !searchQuery.trim()}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-sm text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              {searching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>Find</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDetectLocation}
+              disabled={locating}
+              className="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-sm text-xs font-semibold uppercase tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              <Navigation className={`w-3.5 h-3.5 ${locating ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">
+                {locating ? "Locating..." : "Detect GPS"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          ref={mapContainerRef}
+          className="w-full h-72 rounded-sm overflow-hidden border border-slate-300 z-0"
+        />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500">
+          <span>
+            * Click anywhere on the map or drag the marker pin to auto-generate the store URL.
+          </span>
+          {value && (
+            <a
+              href={value}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1 font-semibold shrink-0"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Verify on Google Maps</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+
+        <Input
+          label="Google Map URL (Auto-filled)"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Click on the map above to auto-generate URL..."
+        />
+      </div>
+    </div>
+  );
 }

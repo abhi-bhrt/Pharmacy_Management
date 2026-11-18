@@ -1,3 +1,4 @@
+// services/shops/shop-create.service.ts
 import type { PoolClient } from "pg";
 import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
@@ -7,6 +8,10 @@ export async function createShopService(
   input: CreateShopInput,
   executor: DbExecutor = pool
 ): Promise<ShopResponse> {
+  if (!input?.ownerId?.trim()) {
+    throw AppError.validation("Owner ID is required to create a shop");
+  }
+
   if (isPool(executor)) {
     return withTransaction((client) => executeCreateShop(input, client), executor);
   }
@@ -40,8 +45,8 @@ async function executeCreateShop(
     throw AppError.conflict("A user can only create and manage a single shop");
   }
 
-  if (!address?.pincode || !address?.state || !address?.district || !address?.area) {
-    throw new AppError("Complete shop address is required", 400, "VALIDATION_ERROR");
+  if (!address?.pincode?.trim() || !address?.state?.trim() || !address?.district?.trim() || !address?.area?.trim()) {
+    throw AppError.validation("Complete shop address (pincode, state, district, area) is required");
   }
 
   const addressRes = await client.query<Address>(
@@ -51,7 +56,7 @@ async function executeCreateShop(
     [
       address.pincode.trim(),
       address.state.trim(),
-      address.country ?? "IN",
+      address.country?.trim() || "IN",
       address.district.trim(),
       address.area.trim(),
     ]
@@ -67,17 +72,17 @@ async function executeCreateShop(
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING *`,
     [
-      shopName.trim(),                      // $1: shop_name
-      phone.trim(),                         // $2: phone
-      email.toLowerCase().trim(),           // $3: email
-      drugLicenceNumber.trim(),             // $4: drug_licence_number
-      pharmacistName.trim(),                // $5: pharmacist_name
-      pharmacistRegistrationNumber.trim(),  // $6: pharmacist_registration_number
-      gstin.trim(),                         // $7: gstin
-      ownerId,                              // $8: owner_id (UUID)
-      shopAddress.id,                       // $9: address_id (UUID)
-      imageId || null,                      // $10: image_id
-      location?.trim() || null,             // $11: location
+      shopName.trim(),
+      phone.trim(),
+      email.toLowerCase().trim(),
+      drugLicenceNumber.trim(),
+      pharmacistName.trim(),
+      pharmacistRegistrationNumber.trim(),
+      gstin.trim(),
+      ownerId,
+      shopAddress.id,
+      imageId || null,
+      location?.trim() || null,
     ]
   );
 

@@ -1,3 +1,4 @@
+// services/invoices/invoice.helper.ts
 import type { PoolClient } from "pg";
 import type { BuyerInput } from "@/types";
 
@@ -13,7 +14,7 @@ export async function generateInvoiceNumber(
     [shopId, `${prefix}%`]
   );
 
-  const nextSeq = parseInt(countRes.rows[0].count, 10) + 1;
+  const nextSeq = parseInt(countRes.rows[0]?.count || "0", 10) + 1;
   return `${prefix}${String(nextSeq).padStart(4, "0")}`;
 }
 
@@ -36,6 +37,7 @@ export async function findOrCreateBuyer(
            gstin = COALESCE($2, gstin), 
            drug_licence_number = COALESCE($3, drug_licence_number),
            email = COALESCE($4, email),
+           is_b2b = CASE WHEN $2 IS NOT NULL THEN TRUE ELSE is_b2b END,
            updated_at = NOW()
        WHERE id = $5`,
       [
