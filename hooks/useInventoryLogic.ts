@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useMedicines } from "@/hooks/useMedicines";
+import { useConfirm } from "@/components/providers/ConfirmProvider";
 import type { MedicineItem } from "@/types";
 import type { ExtractedMedicineItem } from "@/components/features/inventory/ImageUploadModal";
 
@@ -31,6 +32,7 @@ const INITIAL_FORM_STATE: MedicineFormState = {
 };
 
 export function useInventoryLogic() {
+  const confirm = useConfirm();
   const {
     medicines,
     loading,
@@ -123,7 +125,12 @@ export function useInventoryLogic() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to remove this medicine from inventory?")) {
+    const confirmed = await confirm({
+      title: "Remove medicine?",
+      message: "Are you sure you want to remove this medicine from inventory?",
+      confirmLabel: "Remove medicine",
+    });
+    if (!confirmed) {
       return;
     }
 

@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useConfirm } from "@/components/providers/ConfirmProvider";
 import NavbarView, { type NavLinkItem } from "./NavbarView";
 
 const NAV_LINKS: NavLinkItem[] = [
@@ -27,6 +28,7 @@ function NavbarContainer() {
   const user = useAuthStore((state) => state.user);
   const isAdmin = useAuthStore((state) => state.isAdmin);
   const logout = useAuthStore((state) => state.logout);
+  const confirm = useConfirm();
 
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -126,6 +128,13 @@ function NavbarContainer() {
 
   const handleSignOut = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    const confirmed = await confirm({
+      title: "Sign out?",
+      message: "Are you sure you want to sign out of your account?",
+      confirmLabel: "Sign out",
+    });
+    if (!confirmed) return;
+
     await logout();
     setUserDropdownOpen(false);
     setMobileMenuOpen(false);

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import AuthProvider from "@/components/providers/AuthProvider";
+import { ConfirmProvider } from "@/components/providers/ConfirmProvider";
 import { BRAND_CONFIG } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -21,10 +22,12 @@ export default function RootLayout({
         className="bg-slate-100 min-h-screen text-slate-900 antialiased selection:bg-teal-700 selection:text-white"
         suppressHydrationWarning
       >
-        <AuthProvider>
-          <Navbar />
-          {children}
-        </AuthProvider>
+        <ConfirmProvider>
+          <AuthProvider>
+            <Navbar />
+            {children}
+          </AuthProvider>
+        </ConfirmProvider>
       </body>
     </html>
   );
