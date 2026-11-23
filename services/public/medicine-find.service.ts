@@ -1,16 +1,38 @@
-// services/public/medicine-find.service.ts
-import { pool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
 import { PAGINATION_DEFAULTS } from "@/config/constants";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { toMedicine } from "@/lib/db/mappers";
+import type { Medicine as DbMedicine } from "@prisma/client";
 import type {
   PublicMedicineResponse,
   PublicMedicineListResponse,
   PublicMedicineQueryParams,
 } from "@/types";
 
+function toPublicMedicine(row: DbMedicine & {
+  shop: {
+    shop_name: string;
+    location: string | null;
+    address: { area: string; district: string; pincode: string };
+  };
+}): PublicMedicineResponse {
+  const medicine = toMedicine(row);
+  const address = [row.shop.address.area, row.shop.address.district, row.shop.address.pincode]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    ...medicine,
+    shop_name: row.shop.shop_name,
+    shop_location: row.shop.location,
+    shop_address: address || null,
+  };
+}
+
 export async function getPublicMedicinesService(
   params: PublicMedicineQueryParams,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<PublicMedicineListResponse> {
   const search = params.search?.trim() || "";
   const city = params.city?.trim() || "";
@@ -21,84 +43,67 @@ export async function getPublicMedicinesService(
     Math.max(1, params.limit ?? PAGINATION_DEFAULTS.LIMIT),
     PAGINATION_DEFAULTS.MAX_LIMIT
   );
-  const offset = (safePage - 1) * safeLimit;
-
-  const clauses: string[] = [];
-  const values: unknown[] = [];
-  let paramIndex = 1;
-
-  if (city) {
-    clauses.push(`(a.district ILIKE $${paramIndex} OR a.area ILIKE $${paramIndex})`);
-    values.push(`%${city}%`);
-    paramIndex++;
-  }
-
-  if (pincode) {
-    clauses.push(`a.pincode ILIKE $${paramIndex++}`);
-    values.push(`%${pincode}%`);
-  }
-
-  if (search) {
-    clauses.push(
-      `(m.description ILIKE $${paramIndex} OR m.batch_no ILIKE $${paramIndex} OR m.hsn_code ILIKE $${paramIndex})`
-    );
-    values.push(`%${search}%`);
-    paramIndex++;
-  }
-
-  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-
-  const queryText = `
-    SELECT 
-      m.id, 
-      m.shop_id, 
-      m.description, 
-      m.batch_no, 
-      m.mrp, 
-      m.rate, 
-      m.gst_rate, 
-      m.exp_date, 
-      m.quantity, 
-      m.hsn_code, 
-      m.pack_size, 
-      m.created_at, 
-      m.updated_at,
-      s.shop_name AS shop_name,
-      s.location AS shop_location,
-      NULLIF(CONCAT_WS(', ', NULLIF(a.area, ''), NULLIF(a.district, ''), NULLIF(a.pincode, '')), '') AS shop_address
-    FROM medicines m
-    JOIN shops s ON m.shop_id = s.id
-    LEFT JOIN addresses a ON s.address_id = a.id
-    ${whereClause}
-    ORDER BY m.created_at DESC
-    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
-  `;
-
-  const countQueryText = `
-    SELECT COUNT(*)::int AS count
-    FROM medicines m
-    JOIN shops s ON m.shop_id = s.id
-    LEFT JOIN addresses a ON s.address_id = a.id
-    ${whereClause}
-  `;
+  const where = {
+    ...(search
+      ? {
+          OR: [
+            { description: { contains: search, mode: "insensitive" as const } },
+            { batch_no: { contains: search, mode: "insensitive" as const } },
+            { hsn_code: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(city || pincode
+      ? {
+          shop: {
+            address: {
+              is: {
+                ...(city
+                  ? {
+                      OR: [
+                        { district: { contains: city, mode: "insensitive" as const } },
+                        { area: { contains: city, mode: "insensitive" as const } },
+                      ],
+                    }
+                  : {}),
+                ...(pincode && {
+                  pincode: { contains: pincode, mode: "insensitive" as const },
+                }),
+              },
+            },
+          },
+        }
+      : {}),
+  };
 
   try {
-    const [medicinesRes, countRes] = await Promise.all([
-      executor.query<PublicMedicineResponse>(queryText, [...values, safeLimit, offset]),
-      executor.query<{ count: number }>(countQueryText, values),
+    const [rows, total] = await Promise.all([
+      executor.medicine.findMany({
+        where,
+        include: {
+          shop: {
+            select: {
+              shop_name: true,
+              location: true,
+              address: { select: { area: true, district: true, pincode: true } },
+            },
+          },
+        },
+        orderBy: { created_at: "desc" },
+        skip: (safePage - 1) * safeLimit,
+        take: safeLimit,
+      }),
+      executor.medicine.count({ where }),
     ]);
 
     return {
-      medicines: medicinesRes.rows,
-      total: countRes.rows[0]?.count ?? 0,
+      medicines: rows.map(toPublicMedicine),
+      total,
       page: safePage,
       limit: safeLimit,
     };
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
-
+    if (error instanceof AppError) throw error;
     console.error("Error executing getPublicMedicinesService:", error);
     throw AppError.internal("Internal server error while fetching public medicines");
   }
@@ -106,55 +111,36 @@ export async function getPublicMedicinesService(
 
 export async function getPublicMedicineByIdService(
   id: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<PublicMedicineResponse> {
   if (!id?.trim()) {
     throw AppError.validation("Medicine ID is required");
   }
 
   try {
-    const res = await executor.query<PublicMedicineResponse>(
-      `
-        SELECT 
-          m.id, 
-          m.shop_id, 
-          m.description, 
-          m.batch_no, 
-          m.mrp, 
-          m.rate, 
-          m.gst_rate, 
-          m.exp_date, 
-          m.quantity, 
-          m.hsn_code, 
-          m.pack_size, 
-          m.created_at, 
-          m.updated_at,
-          s.shop_name AS shop_name,
-          s.location AS shop_location,
-          NULLIF(CONCAT_WS(', ', NULLIF(a.area, ''), NULLIF(a.district, ''), NULLIF(a.pincode, '')), '') AS shop_address
-        FROM medicines m
-        JOIN shops s ON m.shop_id = s.id
-        LEFT JOIN addresses a ON s.address_id = a.id
-        WHERE m.id = $1 
-        LIMIT 1
-      `,
-      [id.trim()]
-    );
+    const row = await executor.medicine.findUnique({
+      where: { id: id.trim() },
+      include: {
+        shop: {
+          select: {
+            shop_name: true,
+            location: true,
+            address: { select: { area: true, district: true, pincode: true } },
+          },
+        },
+      },
+    });
 
-    if (res.rows.length === 0) {
+    if (!row) {
       throw AppError.notFound("Medicine not found");
     }
 
-    return res.rows[0];
+    return toPublicMedicine(row);
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
-
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+    if (error instanceof AppError) throw error;
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2023") {
       throw AppError.validation("Invalid Medicine ID format");
     }
-
     console.error("Error executing getPublicMedicineByIdService:", error);
     throw AppError.internal("Internal server error while fetching medicine details");
   }

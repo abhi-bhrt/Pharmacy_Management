@@ -1,14 +1,13 @@
-// services/users/user-verify.service.ts
-import type { VerifyCredentialsRow, SignInInput, AuthResponse } from "@/types";
-import { getUserProfileById } from "./user-profile.service";
-import { pool, type DbExecutor } from "@/lib/db/client";
+import { AppError } from "@/lib/api/app-error";
 import { verifyPassword } from "@/lib/auth/password.util";
 import { signToken } from "@/lib/auth/jwt.util";
-import { AppError } from "@/lib/api/app-error";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { getUserProfileById } from "./user-profile.service";
+import type { AuthResponse, SignInInput, VerifyCredentialsRow } from "@/types";
 
 export async function verifyUserCredentials(
   input: SignInInput,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<AuthResponse> {
   const { email, password } = input;
 
@@ -17,23 +16,16 @@ export async function verifyUserCredentials(
   }
 
   try {
-    const queryText = `
-      SELECT id, email, password, role
-      FROM users
-      WHERE email = $1
-      LIMIT 1
-    `;
-
-    const result = await executor.query<VerifyCredentialsRow>(queryText, [email.toLowerCase().trim()]);
-
-    const existing = result.rows[0];
+    const existing = await executor.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+      select: { id: true, email: true, password: true, role: true },
+    });
 
     if (!existing) {
       throw AppError.unauthorized("Invalid credentials");
     }
 
     const isPasswordValid = await verifyPassword(password, existing.password);
-
     if (!isPasswordValid) {
       throw AppError.unauthorized("Invalid credentials");
     }
@@ -41,23 +33,18 @@ export async function verifyUserCredentials(
     const token = await signToken({
       userId: existing.id,
       email: existing.email,
-      role: existing.role,
+      role: existing.role as VerifyCredentialsRow["role"],
     });
 
     const user = await getUserProfileById(existing.id, executor);
-
     if (!user) {
       throw AppError.notFound("User profile not found");
     }
 
     return { user, token };
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
-
+    if (error instanceof AppError) throw error;
     console.error("Error executing verifyUserCredentials:", error);
-
     throw AppError.internal("Internal server error during authentication");
   }
 }

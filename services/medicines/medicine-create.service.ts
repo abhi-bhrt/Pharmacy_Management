@@ -1,22 +1,18 @@
-// services/medicines/medicine-create.service.ts
-import type { PoolClient } from "pg";
-import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
+import { prisma, withTransaction, type DbExecutor } from "@/lib/db/client";
+import { toMedicine } from "@/lib/db/mappers";
 import type { CreateMedicineInput, Medicine } from "@/types";
 
 export async function createMedicineService(
   input: CreateMedicineInput,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<Medicine> {
-  if (isPool(executor)) {
-    return withTransaction((client) => executeCreateMedicine(input, client), executor);
-  }
-  return executeCreateMedicine(input, executor);
+  return withTransaction((tx) => executeCreateMedicine(input, tx), executor);
 }
 
 async function executeCreateMedicine(
   input: CreateMedicineInput,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<Medicine> {
   const {
     shopId,
@@ -32,51 +28,39 @@ async function executeCreateMedicine(
   } = input;
 
   try {
-    const existing = await client.query<{ id: string }>(
-      `SELECT id FROM medicines 
-       WHERE shop_id = $1 AND LOWER(batch_no) = LOWER($2) AND LOWER(hsn_code) = LOWER($3) 
-       LIMIT 1`,
-      [shopId, batchNo.trim(), hsnCode.trim()]
-    );
+    const existing = await executor.medicine.findFirst({
+      where: {
+        shop_id: shopId,
+        batch_no: { equals: batchNo.trim(), mode: "insensitive" },
+        hsn_code: { equals: hsnCode.trim(), mode: "insensitive" },
+      },
+      select: { id: true },
+    });
 
-    if (existing.rows.length > 0) {
+    if (existing) {
       throw AppError.conflict(
         "Medicine with this Batch Number and HSN Code already exists in your inventory"
       );
     }
 
-    const res = await client.query<Medicine>(
-      `INSERT INTO medicines (
-        shop_id, description, batch_no, mrp, rate, 
-        gst_rate, exp_date, quantity, hsn_code, pack_size
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
-      [
-        shopId,
-        description.trim(),
-        batchNo.trim(),
+    const medicine = await executor.medicine.create({
+      data: {
+        shop_id: shopId,
+        description: description.trim(),
+        batch_no: batchNo.trim(),
         mrp,
         rate,
-        gstRate,
-        expDate,
+        gst_rate: gstRate,
+        exp_date: expDate,
         quantity,
-        hsnCode.trim(),
-        packSize.trim(),
-      ]
-    );
+        hsn_code: hsnCode.trim(),
+        pack_size: packSize.trim(),
+      },
+    });
 
-    return res.rows[0];
+    return toMedicine(medicine);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (typeof error === "object" && error !== null && "code" in error) {
-      if (error.code === "23505") {
-        throw AppError.conflict("Medicine with this Batch Number and HSN Code already exists");
-      }
-      if (error.code === "22007" || error.code === "22008") {
-        throw AppError.validation("Invalid expiry date format");
-      }
-    }
     console.error("Error executing createMedicineService:", error);
     throw AppError.internal("Internal server error while creating medicine");
   }

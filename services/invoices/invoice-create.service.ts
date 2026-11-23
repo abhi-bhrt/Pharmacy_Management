@@ -1,15 +1,12 @@
-// services/invoices/invoice-create.service.ts
-import type { PoolClient } from "pg";
-import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
-import { generateInvoiceNumber, findOrCreateBuyer } from "./invoice.helper";
+import { prisma, withTransaction, type DbExecutor } from "@/lib/db/client";
+import { toInvoice, toInvoiceItem, toMedicine } from "@/lib/db/mappers";
 import type {
   CreateInvoiceInput,
-  Invoice,
   InvoiceFullResponse,
   InvoiceItem,
-  Medicine,
 } from "@/types";
+import { findOrCreateBuyer, generateInvoiceNumber } from "./invoice.helper";
 
 interface ProcessedInvoiceItem {
   medicineId: string;
@@ -31,17 +28,14 @@ interface ProcessedInvoiceItem {
 
 export async function createInvoiceService(
   input: CreateInvoiceInput,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<InvoiceFullResponse> {
-  if (isPool(executor)) {
-    return withTransaction((client) => executeCreateInvoice(input, client), executor);
-  }
-  return executeCreateInvoice(input, executor);
+  return withTransaction((tx) => executeCreateInvoice(input, tx), executor);
 }
 
 async function executeCreateInvoice(
   input: CreateInvoiceInput,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<InvoiceFullResponse> {
   const {
     shopId,
@@ -64,8 +58,7 @@ async function executeCreateInvoice(
     throw AppError.validation("Cannot generate a B2B transfer invoice to your own shop");
   }
 
-  const buyerId = await findOrCreateBuyer(buyer, client);
-
+  const buyerId = await findOrCreateBuyer(buyer, executor);
   let subTotal = 0;
   let cgstTotal = 0;
   let sgstTotal = 0;
@@ -76,32 +69,28 @@ async function executeCreateInvoice(
       throw AppError.validation("Each invoice item must have a valid medicine ID and quantity >= 1");
     }
 
-    const freeQty = item.freeQuantity ?? 0;
-    const totalDeductQty = item.quantity + freeQty;
+    const freeQuantity = item.freeQuantity ?? 0;
+    const totalDeductQuantity = item.quantity + freeQuantity;
+    const medicineRow = await executor.medicine.findFirst({
+      where: { id: item.medicineId, shop_id: shopId },
+    });
 
-    const medRes = await client.query<Medicine>(
-      `SELECT * FROM medicines WHERE id = $1 AND shop_id = $2 FOR UPDATE`,
-      [item.medicineId, shopId]
-    );
-
-    if (medRes.rows.length === 0) {
+    if (!medicineRow) {
       throw AppError.notFound(`Medicine (${item.medicineId})`);
     }
 
-    const med = medRes.rows[0];
-
-    if (med.quantity < totalDeductQty) {
+    const medicine = toMedicine(medicineRow);
+    if (medicineRow.quantity < totalDeductQuantity) {
       throw new AppError(
-        `Insufficient stock for "${med.description}". In stock: ${med.quantity}, requested: ${totalDeductQty}`,
+        `Insufficient stock for "${medicine.description}". In stock: ${medicineRow.quantity}, requested: ${totalDeductQuantity}`,
         400,
         "INSUFFICIENT_STOCK"
       );
     }
 
-    const rate = parseFloat(med.rate);
-    const gstRate = parseFloat(med.gst_rate);
+    const rate = Number(medicine.rate);
+    const gstRate = Number(medicine.gst_rate);
     const taxableAmount = +(rate * item.quantity).toFixed(2);
-
     const halfGst = gstRate / 2;
     const cgstAmount = +((taxableAmount * halfGst) / 100).toFixed(2);
     const sgstAmount = +((taxableAmount * halfGst) / 100).toFixed(2);
@@ -111,63 +100,67 @@ async function executeCreateInvoice(
     cgstTotal += cgstAmount;
     sgstTotal += sgstAmount;
 
-    await client.query(
-      `UPDATE medicines 
-       SET quantity = quantity - $1, updated_at = NOW() 
-       WHERE id = $2`,
-      [totalDeductQty, med.id]
-    );
+    const stockUpdate = await executor.medicine.updateMany({
+      where: { id: medicine.id, quantity: { gte: totalDeductQuantity } },
+      data: { quantity: { decrement: totalDeductQuantity } },
+    });
+    if (stockUpdate.count === 0) {
+      const current = await executor.medicine.findUnique({
+        where: { id: medicine.id },
+        select: { quantity: true },
+      });
+      throw new AppError(
+        `Insufficient stock for "${medicine.description}". In stock: ${current?.quantity ?? 0}, requested: ${totalDeductQuantity}`,
+        400,
+        "INSUFFICIENT_STOCK"
+      );
+    }
 
     if (buyerShopId) {
-      const buyerMedRes = await client.query<Medicine>(
-        `SELECT id, quantity FROM medicines 
-         WHERE shop_id = $1 AND LOWER(batch_no) = LOWER($2) AND LOWER(hsn_code) = LOWER($3)
-         LIMIT 1`,
-        [buyerShopId, med.batch_no, med.hsn_code]
-      );
+      const buyerMedicine = await executor.medicine.findFirst({
+        where: {
+          shop_id: buyerShopId,
+          batch_no: { equals: medicine.batch_no, mode: "insensitive" },
+          hsn_code: { equals: medicine.hsn_code, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
 
-      if (buyerMedRes.rows.length > 0) {
-        await client.query(
-          `UPDATE medicines 
-           SET quantity = quantity + $1, updated_at = NOW() 
-           WHERE id = $2`,
-          [totalDeductQty, buyerMedRes.rows[0].id]
-        );
+      if (buyerMedicine) {
+        await executor.medicine.update({
+          where: { id: buyerMedicine.id },
+          data: { quantity: { increment: totalDeductQuantity } },
+        });
       } else {
-        await client.query(
-          `INSERT INTO medicines (
-            shop_id, description, batch_no, mrp, rate, 
-            gst_rate, exp_date, quantity, hsn_code, pack_size
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            buyerShopId,
-            med.description,
-            med.batch_no,
-            med.mrp,
-            med.rate,
-            med.gst_rate,
-            med.exp_date,
-            totalDeductQty,
-            med.hsn_code,
-            med.pack_size,
-          ]
-        );
+        await executor.medicine.create({
+          data: {
+            shop_id: buyerShopId,
+            description: medicine.description,
+            batch_no: medicine.batch_no,
+            mrp: medicine.mrp,
+            rate: medicine.rate,
+            gst_rate: medicine.gst_rate,
+            exp_date: medicine.exp_date,
+            quantity: totalDeductQuantity,
+            hsn_code: medicine.hsn_code,
+            pack_size: medicine.pack_size,
+          },
+        });
       }
     }
 
     processedItems.push({
-      medicineId: med.id,
-      description: med.description,
-      batchNo: med.batch_no,
-      expDate: med.exp_date,
-      hsnCode: med.hsn_code,
-      packSize: med.pack_size,
+      medicineId: medicine.id,
+      description: medicine.description,
+      batchNo: medicine.batch_no,
+      expDate: medicine.exp_date,
+      hsnCode: medicine.hsn_code,
+      packSize: medicine.pack_size,
       quantity: item.quantity,
-      freeQuantity: freeQty,
-      mrp: med.mrp,
-      rate: med.rate,
-      gstRate: med.gst_rate,
+      freeQuantity,
+      mrp: medicine.mrp,
+      rate: medicine.rate,
+      gstRate: medicine.gst_rate,
       taxableAmount: taxableAmount.toFixed(2),
       cgstAmount: cgstAmount.toFixed(2),
       sgstAmount: sgstAmount.toFixed(2),
@@ -177,69 +170,53 @@ async function executeCreateInvoice(
 
   const totalTax = cgstTotal + sgstTotal;
   const netAmount = Math.max(0, +(subTotal + totalTax - discount).toFixed(2));
-  const invoiceNo = await generateInvoiceNumber(shopId, client);
+  const invoiceNo = await generateInvoiceNumber(shopId, executor);
 
-  const invoiceRes = await client.query<Invoice>(
-    `INSERT INTO invoices (
-      shop_id, buyer_id, invoice_no, sub_total, discount, 
-      cgst_total, sgst_total, net_amount, payment_mode, 
-      payment_status, doctor_name, doctor_reg_no, note
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    RETURNING *`,
-    [
-      shopId,
-      buyerId,
-      invoiceNo,
-      subTotal.toFixed(2),
-      discount.toFixed(2),
-      cgstTotal.toFixed(2),
-      sgstTotal.toFixed(2),
-      netAmount.toFixed(2),
-      paymentMode,
-      paymentStatus,
-      doctorName?.trim() || null,
-      doctorRegNo?.trim() || null,
-      note?.trim() || null,
-    ]
-  );
+  const invoiceRow = await executor.invoice.create({
+    data: {
+      shop_id: shopId,
+      buyer_id: buyerId,
+      invoice_no: invoiceNo,
+      sub_total: subTotal.toFixed(2),
+      discount: discount.toFixed(2),
+      cgst_total: cgstTotal.toFixed(2),
+      sgst_total: sgstTotal.toFixed(2),
+      net_amount: netAmount.toFixed(2),
+      payment_mode: paymentMode,
+      payment_status: paymentStatus,
+      doctor_name: doctorName?.trim() || null,
+      doctor_reg_no: doctorRegNo?.trim() || null,
+      note: note?.trim() || null,
+    },
+  });
 
-  const invoice = invoiceRes.rows[0];
   const createdItems: InvoiceItem[] = [];
-
   for (const item of processedItems) {
-    const itemRes = await client.query<InvoiceItem>(
-      `INSERT INTO invoice_items (
-        invoice_id, medicine_id, description, batch_no, exp_date,
-        hsn_code, pack_size, quantity, free_quantity, mrp, rate,
-        gst_rate, taxable_amount, cgst_amount, sgst_amount, total_amount
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-      RETURNING *`,
-      [
-        invoice.id,
-        item.medicineId,
-        item.description,
-        item.batchNo,
-        item.expDate,
-        item.hsnCode,
-        item.packSize,
-        item.quantity,
-        item.freeQuantity,
-        item.mrp,
-        item.rate,
-        item.gstRate,
-        item.taxableAmount,
-        item.cgstAmount,
-        item.sgstAmount,
-        item.totalAmount,
-      ]
-    );
-    createdItems.push(itemRes.rows[0]);
+    const itemRow = await executor.invoiceItem.create({
+      data: {
+        invoice_id: invoiceRow.id,
+        medicine_id: item.medicineId,
+        description: item.description,
+        batch_no: item.batchNo,
+        exp_date: item.expDate,
+        hsn_code: item.hsnCode,
+        pack_size: item.packSize,
+        quantity: item.quantity,
+        free_quantity: item.freeQuantity,
+        mrp: item.mrp,
+        rate: item.rate,
+        gst_rate: item.gstRate,
+        taxable_amount: item.taxableAmount,
+        cgst_amount: item.cgstAmount,
+        sgst_amount: item.sgstAmount,
+        total_amount: item.totalAmount,
+      },
+    });
+    createdItems.push(toInvoiceItem(itemRow));
   }
 
   return {
-    ...invoice,
+    ...toInvoice(invoiceRow),
     items: createdItems,
     buyer: {
       name: buyer.name.trim(),

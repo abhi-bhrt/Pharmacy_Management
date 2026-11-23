@@ -1,60 +1,47 @@
-// services/shops/shop-delete.service.ts
-import type { PoolClient } from "pg";
-import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
+import { prisma, withTransaction, type DbExecutor } from "@/lib/db/client";
 
 export async function deleteShopService(
   ownerId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<{ message: string }> {
   if (!ownerId?.trim()) {
     throw AppError.validation("Owner ID is required to delete shop");
   }
 
-  if (isPool(executor)) {
-    return withTransaction((client) => executeDeleteShop(ownerId.trim(), client), executor);
-  }
-  return executeDeleteShop(ownerId.trim(), executor);
+  return withTransaction((tx) => executeDeleteShop(ownerId.trim(), tx), executor);
 }
 
 async function executeDeleteShop(
   ownerId: string,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<{ message: string }> {
-  const shopRes = await client.query<{ id: string; address_id: string | null }>(
-    `SELECT id, address_id FROM shops WHERE owner_id = $1 LIMIT 1`,
-    [ownerId]
-  );
+  const shop = await executor.shop.findFirst({
+    where: { owner_id: ownerId },
+    select: { id: true, address_id: true },
+  });
 
-  if (shopRes.rows.length === 0) {
+  if (!shop) {
     throw AppError.notFound("Shop not found");
   }
 
-  const { id: shopId, address_id: addressId } = shopRes.rows[0];
+  const hasInvoices = await executor.invoice.findFirst({
+    where: { shop_id: shop.id },
+    select: { id: true },
+  });
 
-  const invoiceCheck = await client.query<{ id: string }>(
-    `SELECT id FROM invoices WHERE shop_id = $1 LIMIT 1`,
-    [shopId]
-  );
-
-  if (invoiceCheck.rows.length > 0) {
+  if (hasInvoices) {
     throw AppError.conflict(
       "Cannot delete shop with existing invoice records. Consider archiving or contacting support."
     );
   }
 
-  await client.query(`DELETE FROM shops WHERE id = $1`, [shopId]);
-
-  if (addressId) {
-    await client.query(`DELETE FROM addresses WHERE id = $1`, [addressId]);
-  }
-
-  await client.query(
-    `UPDATE users 
-     SET role = 'CUSTOMER', updated_at = NOW() 
-     WHERE id = $1 AND role = 'ADMIN'`,
-    [ownerId]
-  );
+  await executor.shop.delete({ where: { id: shop.id } });
+  await executor.address.delete({ where: { id: shop.address_id } });
+  await executor.user.updateMany({
+    where: { id: ownerId, role: "ADMIN" },
+    data: { role: "CUSTOMER" },
+  });
 
   return { message: "Shop deleted successfully" };
 }

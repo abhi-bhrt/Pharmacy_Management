@@ -9,7 +9,7 @@ export interface Shop extends BaseEntity {
   pharmacist_name: string;
   pharmacist_registration_number: string;
   gstin: string;
-  location: string;
+  location: string | null;
   owner_id: string;
   address_id: string;
   image_id: string | null;

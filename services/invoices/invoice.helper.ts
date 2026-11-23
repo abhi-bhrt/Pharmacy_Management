@@ -1,69 +1,56 @@
-// services/invoices/invoice.helper.ts
-import type { PoolClient } from "pg";
+import type { DbExecutor } from "@/lib/db/client";
 import type { BuyerInput } from "@/types";
 
 export async function generateInvoiceNumber(
   shopId: string,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<string> {
-  const currentYear = new Date().getFullYear();
-  const prefix = `INV-${currentYear}-`;
+  const prefix = `INV-${new Date().getFullYear()}-`;
+  const count = await executor.invoice.count({
+    where: { shop_id: shopId, invoice_no: { startsWith: prefix } },
+  });
 
-  const countRes = await client.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM invoices WHERE shop_id = $1 AND invoice_no LIKE $2`,
-    [shopId, `${prefix}%`]
-  );
-
-  const nextSeq = parseInt(countRes.rows[0]?.count || "0", 10) + 1;
-  return `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  return `${prefix}${String(count + 1).padStart(4, "0")}`;
 }
 
 export async function findOrCreateBuyer(
   buyer: BuyerInput,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<string> {
   const normalizedPhone = buyer.phone.trim();
+  const existing = await executor.buyer.findFirst({
+    where: { phone: normalizedPhone },
+    select: { id: true },
+  });
 
-  const existing = await client.query<{ id: string }>(
-    `SELECT id FROM buyers WHERE phone = $1 LIMIT 1`,
-    [normalizedPhone]
-  );
-
-  if (existing.rows.length > 0) {
-    const buyerId = existing.rows[0].id;
-    await client.query(
-      `UPDATE buyers 
-       SET name = $1, 
-           gstin = COALESCE($2, gstin), 
-           drug_licence_number = COALESCE($3, drug_licence_number),
-           email = COALESCE($4, email),
-           is_b2b = CASE WHEN $2 IS NOT NULL THEN TRUE ELSE is_b2b END,
-           updated_at = NOW()
-       WHERE id = $5`,
-      [
-        buyer.name.trim(),
-        buyer.gstin ? buyer.gstin.trim() : null,
-        buyer.drugLicenceNumber ? buyer.drugLicenceNumber.trim() : null,
-        buyer.email ? buyer.email.toLowerCase().trim() : null,
-        buyerId,
-      ]
-    );
-    return buyerId;
+  if (existing) {
+    await executor.buyer.update({
+      where: { id: existing.id },
+      data: {
+        name: buyer.name.trim(),
+        ...(buyer.gstin && { gstin: buyer.gstin.trim(), is_b2b: true }),
+        ...(buyer.drugLicenceNumber && {
+          drug_licence_number: buyer.drugLicenceNumber.trim(),
+        }),
+        ...(buyer.email && { email: buyer.email.toLowerCase().trim() }),
+      },
+    });
+    return existing.id;
   }
 
-  const res = await client.query<{ id: string }>(
-    `INSERT INTO buyers (name, phone, email, gstin, drug_licence_number, is_b2b)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [
-      buyer.name.trim(),
-      normalizedPhone,
-      buyer.email ? buyer.email.toLowerCase().trim() : null,
-      buyer.gstin ? buyer.gstin.trim() : null,
-      buyer.drugLicenceNumber ? buyer.drugLicenceNumber.trim() : null,
-      Boolean(buyer.isB2b || buyer.gstin),
-    ]
-  );
+  const created = await executor.buyer.create({
+    data: {
+      name: buyer.name.trim(),
+      phone: normalizedPhone,
+      email: buyer.email ? buyer.email.toLowerCase().trim() : null,
+      gstin: buyer.gstin ? buyer.gstin.trim() : null,
+      drug_licence_number: buyer.drugLicenceNumber
+        ? buyer.drugLicenceNumber.trim()
+        : null,
+      is_b2b: Boolean(buyer.isB2b || buyer.gstin),
+    },
+    select: { id: true },
+  });
 
-  return res.rows[0].id;
+  return created.id;
 }

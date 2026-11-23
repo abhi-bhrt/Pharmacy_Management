@@ -1,26 +1,21 @@
-// services/users/user-create.service.ts
-import type { PoolClient } from "pg";
-import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
+import { AppError } from "@/lib/api/app-error";
 import { hashPassword } from "@/lib/auth/password.util";
 import { signToken } from "@/lib/auth/jwt.util";
-import { AppError } from "@/lib/api/app-error";
+import { prisma, withTransaction, type DbExecutor } from "@/lib/db/client";
 import { findUserByCriteria } from "./user-find.service";
 import { getUserProfileById } from "./user-profile.service";
-import type { CreateUserInput, AuthResponse } from "@/types";
+import type { AuthResponse, CreateUserInput } from "@/types";
 
 export async function createUserService(
   input: CreateUserInput,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<AuthResponse> {
-  if (isPool(executor)) {
-    return withTransaction((client) => executeCreateUser(input, client), executor);
-  }
-  return executeCreateUser(input, executor);
+  return withTransaction((tx) => executeCreateUser(input, tx), executor);
 }
 
 async function executeCreateUser(
   input: CreateUserInput,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<AuthResponse> {
   const { name, email, mobNo, password, role = "CUSTOMER", address } = input;
 
@@ -35,59 +30,51 @@ async function executeCreateUser(
   try {
     const existing = await findUserByCriteria(
       { email: normalizedEmail, mobNo: trimmedMobNo },
-      client
+      executor
     );
 
     if (existing) {
       throw AppError.conflict("User with this email or mobile number already exists");
     }
 
-    let addressId: string | null = null;
-
     const hasCompleteAddress = Boolean(
       address?.pincode?.trim() &&
-      address?.state?.trim() &&
-      address?.district?.trim() &&
-      address?.area?.trim()
+        address?.state?.trim() &&
+        address?.district?.trim() &&
+        address?.area?.trim()
     );
 
-    if (address?.pincode?.trim() && address?.state?.trim()) {
-      const addressRes = await client.query<{ id: string }>(
-        `INSERT INTO addresses (pincode, state, country, district, area)
-         VALUES ($1, $2, COALESCE($3, 'IN'), $4, $5)
-         RETURNING id`,
-        [
-          address.pincode.trim(),
-          address.state.trim(),
-          address.country?.trim() || "IN",
-          address.district?.trim() ?? null,
-          address.area?.trim() ?? null,
-        ]
-      );
-      addressId = addressRes.rows[0].id;
-    }
+    const savedAddress = hasCompleteAddress
+      ? await executor.address.create({
+          data: {
+            pincode: address!.pincode.trim(),
+            state: address!.state.trim(),
+            country: address!.country?.trim() || "IN",
+            district: address!.district!.trim(),
+            area: address!.area!.trim(),
+          },
+          select: { id: true },
+        })
+      : null;
 
-    const isProfileComplete = Boolean(
-      trimmedName &&
-      normalizedEmail &&
-      trimmedMobNo &&
-      addressId &&
-      hasCompleteAddress
-    );
-
+    const isProfileComplete = Boolean(trimmedName && normalizedEmail && trimmedMobNo && savedAddress);
     const hashedPassword = await hashPassword(password);
 
-    const userRes = await client.query<{ id: string; email: string; role: typeof role }>(
-      `INSERT INTO users (name, email, mob_no, password, role, status, is_profile_complete, address_id)
-       VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7)
-       RETURNING id, email, role`,
-      [trimmedName, normalizedEmail, trimmedMobNo, hashedPassword, role, isProfileComplete, addressId]
-    );
+    const createdUser = await executor.user.create({
+      data: {
+        name: trimmedName,
+        email: normalizedEmail,
+        mob_no: trimmedMobNo,
+        password: hashedPassword,
+        role,
+        status: "ACTIVE",
+        is_profile_complete: isProfileComplete,
+        address_id: savedAddress?.id ?? null,
+      },
+      select: { id: true, email: true, role: true },
+    });
 
-    const createdUser = userRes.rows[0];
-
-    const userProfile = await getUserProfileById(createdUser.id, client);
-
+    const userProfile = await getUserProfileById(createdUser.id, executor);
     if (!userProfile) {
       throw AppError.internal("Failed to retrieve created user profile");
     }
@@ -95,21 +82,17 @@ async function executeCreateUser(
     const token = await signToken({
       userId: createdUser.id,
       email: createdUser.email,
-      role: createdUser.role,
+      role: createdUser.role as typeof role,
     });
 
     return { user: userProfile, token };
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
-
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+    if (error instanceof AppError) throw error;
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
       throw AppError.conflict("User with this email or mobile number already exists");
     }
 
     console.error("Error executing createUserService:", error);
-
     throw AppError.internal("Internal server error while creating user");
   }
 }

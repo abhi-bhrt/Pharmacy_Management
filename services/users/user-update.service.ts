@@ -1,8 +1,6 @@
-// services/users/user-update.service.ts
-import type { PoolClient } from "pg";
-import { pool, withTransaction, isPool, type DbExecutor } from "@/lib/db/client";
-import { hashPassword } from "@/lib/auth/password.util";
 import { AppError } from "@/lib/api/app-error";
+import { hashPassword } from "@/lib/auth/password.util";
+import { prisma, withTransaction, type DbExecutor } from "@/lib/db/client";
 import { findUserByCriteria } from "./user-find.service";
 import { getUserProfileById } from "./user-profile.service";
 import type { UpdateUserInput, UserProfileResponse } from "@/types";
@@ -10,187 +8,146 @@ import type { UpdateUserInput, UserProfileResponse } from "@/types";
 export async function updateUserService(
   userId: string,
   input: UpdateUserInput,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<UserProfileResponse> {
   if (!userId?.trim()) {
     throw AppError.validation("User ID is required");
   }
 
-  if (isPool(executor)) {
-    return withTransaction((client) => executeUpdateUser(userId.trim(), input, client), executor);
-  }
-  return executeUpdateUser(userId.trim(), input, executor);
+  return withTransaction((tx) => executeUpdateUser(userId.trim(), input, tx), executor);
 }
 
 async function executeUpdateUser(
   userId: string,
   input: UpdateUserInput,
-  client: PoolClient
+  executor: DbExecutor
 ): Promise<UserProfileResponse> {
   const { name, mobNo, password, role, status, isProfileComplete, address } = input;
 
   try {
-    const userCheckRes = await client.query<{
-      id: string;
-      name: string;
-      mob_no: string;
-      address_id: string | null;
-    }>(
-      `SELECT id, name, mob_no, address_id FROM users WHERE id = $1 LIMIT 1`,
-      [userId]
-    );
+    const existingUser = await executor.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, mob_no: true, address_id: true },
+    });
 
-    if (userCheckRes.rows.length === 0) {
+    if (!existingUser) {
       throw AppError.notFound("User not found");
     }
 
-    const existingUser = userCheckRes.rows[0];
     let addressId = existingUser.address_id;
-
     const trimmedMobNo = mobNo?.trim();
+
     if (trimmedMobNo) {
-      const existingMobileUser = await findUserByCriteria({ mobNo: trimmedMobNo }, client);
+      const existingMobileUser = await findUserByCriteria({ mobNo: trimmedMobNo }, executor);
       if (existingMobileUser && existingMobileUser.id !== userId) {
         throw AppError.conflict("Mobile number is already in use by another account");
       }
     }
 
     if (address) {
-      const cleanPincode = address.pincode?.trim() || null;
-      const cleanState = address.state?.trim() || null;
-      const cleanCountry = address.country?.trim() || null;
-      const cleanDistrict = address.district?.trim() || null;
-      const cleanArea = address.area?.trim() || null;
+      const addressData = {
+        ...(address.pincode?.trim() && { pincode: address.pincode.trim() }),
+        ...(address.state?.trim() && { state: address.state.trim() }),
+        ...(address.country?.trim() && { country: address.country.trim() }),
+        ...(address.district?.trim() && { district: address.district.trim() }),
+        ...(address.area?.trim() && { area: address.area.trim() }),
+      };
 
       if (addressId) {
-        await client.query(
-          `UPDATE addresses
-           SET pincode = COALESCE($1, pincode),
-               state = COALESCE($2, state),
-               country = COALESCE($3, country),
-               district = COALESCE($4, district),
-               area = COALESCE($5, area),
-               updated_at = NOW()
-           WHERE id = $6`,
-          [cleanPincode, cleanState, cleanCountry, cleanDistrict, cleanArea, addressId]
-        );
-      } else if (cleanPincode && cleanState) {
-        const addressRes = await client.query<{ id: string }>(
-          `INSERT INTO addresses (pincode, state, country, district, area)
-           VALUES ($1, $2, COALESCE($3, 'IN'), $4, $5)
-           RETURNING id`,
-          [cleanPincode, cleanState, cleanCountry ?? "IN", cleanDistrict, cleanArea]
-        );
-        addressId = addressRes.rows[0].id;
+        if (Object.keys(addressData).length > 0) {
+          await executor.address.update({ where: { id: addressId }, data: addressData });
+        }
+      } else if (
+        addressData.pincode &&
+        addressData.state &&
+        addressData.district &&
+        addressData.area
+      ) {
+        const newAddress = await executor.address.create({
+          data: {
+            pincode: addressData.pincode,
+            state: addressData.state,
+            country: addressData.country || "IN",
+            district: addressData.district,
+            area: addressData.area,
+          },
+          select: { id: true },
+        });
+        addressId = newAddress.id;
       }
     }
 
     let computedProfileComplete = isProfileComplete;
     if (computedProfileComplete === undefined) {
       const finalName = name !== undefined ? name.trim() : existingUser.name;
-      const finalMob = trimmedMobNo !== undefined ? trimmedMobNo : existingUser.mob_no;
+      const finalMobNo = trimmedMobNo !== undefined ? trimmedMobNo : existingUser.mob_no;
+      const addressRow = addressId
+        ? await executor.address.findUnique({
+            where: { id: addressId },
+            select: { pincode: true, state: true, district: true, area: true },
+          })
+        : null;
+      const hasCompleteAddress = Boolean(
+        addressRow?.pincode.trim() &&
+          addressRow.state.trim() &&
+          addressRow.district.trim() &&
+          addressRow.area.trim()
+      );
 
-      let hasCompleteAddress = false;
-      if (addressId) {
-        const addrCheck = await client.query<{
-          pincode: string | null;
-          state: string | null;
-          district: string | null;
-          area: string | null;
-        }>(
-          `SELECT pincode, state, district, area FROM addresses WHERE id = $1 LIMIT 1`,
-          [addressId]
-        );
-        const addr = addrCheck.rows[0];
-        hasCompleteAddress = Boolean(
-          addr?.pincode?.trim() &&
-          addr?.state?.trim() &&
-          addr?.district?.trim() &&
-          addr?.area?.trim()
-        );
-      }
-
-      computedProfileComplete = Boolean(finalName && finalMob && hasCompleteAddress);
+      computedProfileComplete = Boolean(finalName && finalMobNo && hasCompleteAddress);
     }
 
-    const updateFields: string[] = [];
-    const queryParams: unknown[] = [];
-    let paramIdx = 1;
+    const data: {
+      name?: string;
+      mob_no?: string;
+      password?: string;
+      role?: string;
+      status?: string;
+      is_profile_complete?: boolean;
+      address_id?: string | null;
+    } = {};
 
     if (name !== undefined) {
       const trimmedName = name.trim();
-      if (!trimmedName) {
-        throw AppError.validation("Name cannot be empty");
-      }
-      updateFields.push(`name = $${paramIdx++}`);
-      queryParams.push(trimmedName);
+      if (!trimmedName) throw AppError.validation("Name cannot be empty");
+      data.name = trimmedName;
     }
 
     if (trimmedMobNo !== undefined) {
-      if (!trimmedMobNo) {
-        throw AppError.validation("Mobile number cannot be empty");
-      }
-      updateFields.push(`mob_no = $${paramIdx++}`);
-      queryParams.push(trimmedMobNo);
+      if (!trimmedMobNo) throw AppError.validation("Mobile number cannot be empty");
+      data.mob_no = trimmedMobNo;
     }
 
     if (password !== undefined) {
-      if (!password) {
-        throw AppError.validation("Password cannot be empty");
-      }
-      const hashedPassword = await hashPassword(password);
-      updateFields.push(`password = $${paramIdx++}`);
-      queryParams.push(hashedPassword);
+      if (!password) throw AppError.validation("Password cannot be empty");
+      data.password = await hashPassword(password);
     }
 
-    if (role !== undefined) {
-      updateFields.push(`role = $${paramIdx++}`);
-      queryParams.push(role);
-    }
-
-    if (status !== undefined) {
-      updateFields.push(`status = $${paramIdx++}`);
-      queryParams.push(status);
-    }
-
+    if (role !== undefined) data.role = role;
+    if (status !== undefined) data.status = status;
     if (computedProfileComplete !== undefined) {
-      updateFields.push(`is_profile_complete = $${paramIdx++}`);
-      queryParams.push(computedProfileComplete);
+      data.is_profile_complete = computedProfileComplete;
+    }
+    if (addressId !== existingUser.address_id) data.address_id = addressId;
+
+    if (Object.keys(data).length > 0) {
+      await executor.user.update({ where: { id: userId }, data });
     }
 
-    if (addressId !== existingUser.address_id) {
-      updateFields.push(`address_id = $${paramIdx++}`);
-      queryParams.push(addressId);
-    }
-
-    if (updateFields.length > 0) {
-      updateFields.push(`updated_at = NOW()`);
-      queryParams.push(userId);
-
-      await client.query(
-        `UPDATE users
-         SET ${updateFields.join(", ")}
-         WHERE id = $${paramIdx}`,
-        queryParams
-      );
-    }
-
-    const updatedProfile = await getUserProfileById(userId, client);
+    const updatedProfile = await getUserProfileById(userId, executor);
     if (!updatedProfile) {
       throw AppError.notFound("User profile not found");
     }
 
     return updatedProfile;
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
+    if (error instanceof AppError) throw error;
 
     if (typeof error === "object" && error !== null && "code" in error) {
-      if (error.code === "23505") {
+      if (error.code === "P2002") {
         throw AppError.conflict("Mobile number is already in use by another account");
       }
-      if (error.code === "22P02") {
+      if (error.code === "P2023") {
         throw AppError.validation("Invalid User ID format");
       }
     }

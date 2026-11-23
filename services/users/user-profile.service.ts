@@ -1,56 +1,45 @@
-// services/users/user-profile.service.ts
-import { pool, type DbExecutor } from "@/lib/db/client";
-import type { UserProfileResponse } from "@/types";
 import { AppError } from "@/lib/api/app-error";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { toAddress, toUser } from "@/lib/db/mappers";
+import type { UserProfileResponse } from "@/types";
 
 export async function getUserProfileById(
   userId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<UserProfileResponse | null> {
   if (!userId) {
     throw AppError.validation("User ID is required");
   }
 
-  const queryText = `
-    SELECT 
-      u.id,
-      u.name,
-      u.email,
-      u.mob_no,
-      u.role,
-      u.status,
-      u.is_profile_complete,
-      u.created_at,
-      u.updated_at,
-      CASE 
-        WHEN a.id IS NOT NULL THEN json_build_object(
-          'id', a.id,
-          'pincode', a.pincode,
-          'state', a.state,
-          'country', a.country,
-          'district', a.district,
-          'area', a.area,
-          'created_at', a.created_at,
-          'updated_at', a.updated_at
-        )
-        ELSE NULL
-      END AS address
-    FROM users u
-    LEFT JOIN addresses a ON u.address_id = a.id
-    WHERE u.id = $1
-    LIMIT 1
-  `;
-
   try {
-    const result = await executor.query<UserProfileResponse>(queryText, [userId]);
-    return result.rows[0] ?? null;
+    const user = await executor.user.findUnique({
+      where: { id: userId },
+      include: { address: true },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    const profile = toUser(user);
+    return {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      mob_no: profile.mob_no,
+      role: profile.role,
+      status: profile.status,
+      is_profile_complete: profile.is_profile_complete,
+      created_at: profile.created_at,
+      updated_at: profile.updated_at,
+      address: user.address ? toAddress(user.address) : null,
+    };
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2023") {
       throw AppError.validation("Invalid User ID format");
     }
 
     console.error("Error executing getUserProfileById:", error);
-
     throw AppError.internal("Internal server error while fetching user profile");
   }
 }

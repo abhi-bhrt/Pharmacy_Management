@@ -33,7 +33,7 @@ The codebase enforces a strict **4-Layer Separation of Concerns**:
    - Route handlers validate incoming payloads, call the appropriate Service method, and return standardized JSON responses via `withApiHandler`.
 
 4. **Business Logic & Data Access Layer (`/services`, `/lib/db`)**
-   - Domain services (`medicine.service.ts`, `invoice.service.ts`, `shop.service.ts`, `user.service.ts`) encapsulate all SQL queries, transactional integrity (e.g., deducting stock upon invoice creation), and domain rules.
+   - Domain services encapsulate Prisma queries, transactional integrity (e.g., deducting stock upon invoice creation), and domain rules.
 
 ---
 
@@ -55,12 +55,12 @@ MEDICAL-SHOP/
 ├── lib/                        # Core infrastructure utilities
 │   ├── api/                    # API client wrapper, route error handler, AppError class
 │   ├── auth/                   # JWT, password hashing (bcrypt), and HTTP-only cookie utilities
-│   ├── db/                     # Database connection pool and query helpers
+│   ├── db/                     # Prisma client and database helpers
 │   └── security/               # Rate limiting utilities
 ├── services/                   # Server-side business logic & database operations
 ├── store/                      # Zustand global state stores (useAuthStore, useBillingStore)
 ├── types/                      # Shared TypeScript interfaces & API contracts
-├── scripts/                    # Database migration CLI scripts
+├── prisma/                     # Prisma schema and database model definitions
 └── middleware.ts               # Next.js Edge authentication & route guard
 ```
 
@@ -87,9 +87,9 @@ To maintain consistency across the repository, adhere strictly to these naming r
 
 All environment variables are validated at runtime in `config/env.ts`. **Never access `process.env` directly in application files—always import `env` from `@/config/env`.**
 
-1. Create a `.env.local` file in the root directory:
+1. Create a `.env` file in the root directory (Next.js also reads `.env.local`):
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env
    ```
 2. Configure the required keys:
    ```env
@@ -152,8 +152,9 @@ Every API endpoint under `/app/api/**` returns a predictable JSON envelope defin
 # Install dependencies
 npm install
 
-# Run database migrations
-npx tsx scripts/migrate.ts
+# Generate the Prisma client and sync the schema to PostgreSQL
+npm run db:generate
+npm run db:migrate
 
 # Start development server
 npm run dev

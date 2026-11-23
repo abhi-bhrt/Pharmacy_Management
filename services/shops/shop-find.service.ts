@@ -1,39 +1,21 @@
-// services/shops/shop-find.service.ts
-import { pool, type DbExecutor } from "@/lib/db/client";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { toAddress, toShop } from "@/lib/db/mappers";
 import type { ShopResponse } from "@/types";
 
 export async function getShopByOwnerService(
   ownerId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<ShopResponse | null> {
   if (!ownerId?.trim()) {
     return null;
   }
 
-  const queryText = `
-    SELECT 
-      s.*,
-      CASE 
-        WHEN a.id IS NOT NULL THEN json_build_object(
-          'id', a.id,
-          'pincode', a.pincode,
-          'state', a.state,
-          'country', a.country,
-          'district', a.district,
-          'area', a.area,
-          'created_at', a.created_at,
-          'updated_at', a.updated_at
-        )
-        ELSE NULL
-      END AS address
-    FROM shops s
-    LEFT JOIN addresses a ON s.address_id = a.id
-    WHERE s.owner_id = $1
-    LIMIT 1
-  `;
+  const shop = await executor.shop.findFirst({
+    where: { owner_id: ownerId.trim() },
+    include: { address: true },
+  });
 
-  const res = await executor.query<ShopResponse>(queryText, [ownerId.trim()]);
-  return res.rows[0] ?? null;
+  return shop ? toShop(shop, toAddress(shop.address)) : null;
 }
 
 export async function findShopsByQueryService(
@@ -41,7 +23,7 @@ export async function findShopsByQueryService(
     shopName?: string;
     gstin?: string;
   },
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<ShopResponse[]> {
   const shopName = criteria.shopName?.trim();
   const gstin = criteria.gstin?.trim();
@@ -50,40 +32,17 @@ export async function findShopsByQueryService(
     return [];
   }
 
-  let queryText = `
-    SELECT 
-      s.*,
-      CASE 
-        WHEN a.id IS NOT NULL THEN json_build_object(
-          'id', a.id,
-          'pincode', a.pincode,
-          'state', a.state,
-          'country', a.country,
-          'district', a.district,
-          'area', a.area,
-          'created_at', a.created_at,
-          'updated_at', a.updated_at
-        )
-        ELSE NULL
-      END AS address
-    FROM shops s
-    LEFT JOIN addresses a ON s.address_id = a.id
-    WHERE 1=1
-  `;
+  const shops = await executor.shop.findMany({
+    where: {
+      AND: [
+        ...(shopName
+          ? [{ shop_name: { contains: shopName, mode: "insensitive" as const } }]
+          : []),
+        ...(gstin ? [{ gstin: { contains: gstin, mode: "insensitive" as const } }] : []),
+      ],
+    },
+    include: { address: true },
+  });
 
-  const values: unknown[] = [];
-  let paramIndex = 1;
-
-  if (shopName) {
-    queryText += ` AND s.shop_name ILIKE $${paramIndex++}`;
-    values.push(`%${shopName}%`);
-  }
-
-  if (gstin) {
-    queryText += ` AND s.gstin ILIKE $${paramIndex++}`;
-    values.push(`%${gstin}%`);
-  }
-
-  const res = await executor.query<ShopResponse>(queryText, values);
-  return res.rows;
+  return shops.map((shop) => toShop(shop, toAddress(shop.address)));
 }

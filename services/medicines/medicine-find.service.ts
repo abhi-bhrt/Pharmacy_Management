@@ -1,26 +1,26 @@
-// services/medicines/medicine-find.service.ts
-import { pool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
 import { PAGINATION_DEFAULTS } from "@/config/constants";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { toMedicine } from "@/lib/db/mappers";
 import type { Medicine, MedicineListResponse, MedicineQueryParams } from "@/types";
 
 export async function getShopIdByOwner(
   ownerId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<string> {
   if (!ownerId?.trim()) {
     throw AppError.unauthorized("Authentication context missing");
   }
 
   try {
-    const res = await executor.query<{ id: string }>(
-      `SELECT id FROM shops WHERE owner_id = $1 LIMIT 1`,
-      [ownerId.trim()]
-    );
-    if (res.rows.length === 0) {
+    const shop = await executor.shop.findFirst({
+      where: { owner_id: ownerId.trim() },
+      select: { id: true },
+    });
+    if (!shop) {
       throw AppError.notFound("Shop profile not found for this account");
     }
-    return res.rows[0].id;
+    return shop.id;
   } catch (error) {
     if (error instanceof AppError) throw error;
     console.error("Error executing getShopIdByOwner:", error);
@@ -30,7 +30,7 @@ export async function getShopIdByOwner(
 
 export async function getMedicinesService(
   params: MedicineQueryParams,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<MedicineListResponse> {
   const {
     shopId = "",
@@ -45,43 +45,37 @@ export async function getMedicinesService(
 
   const safePage = Math.max(1, page);
   const safeLimit = Math.min(Math.max(1, limit), PAGINATION_DEFAULTS.MAX_LIMIT);
-  const offset = (safePage - 1) * safeLimit;
-
-  let baseQuery = `
-    SELECT 
-      id, shop_id, description, batch_no, mrp, rate, gst_rate, 
-      exp_date, quantity, hsn_code, pack_size, created_at, updated_at
-    FROM medicines
-    WHERE shop_id = $1
-  `;
-  const values: unknown[] = [shopId.trim()];
-
-  if (search.trim()) {
-    values.push(`%${search.trim()}%`);
-    const searchIdx = values.length;
-    baseQuery += ` AND (description ILIKE $${searchIdx} OR batch_no ILIKE $${searchIdx} OR hsn_code ILIKE $${searchIdx})`;
-  }
+  const where = {
+    shop_id: shopId.trim(),
+    ...(search.trim()
+      ? {
+          OR: [
+            { description: { contains: search.trim(), mode: "insensitive" as const } },
+            { batch_no: { contains: search.trim(), mode: "insensitive" as const } },
+            { hsn_code: { contains: search.trim(), mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
 
   try {
-    const countQuery = `SELECT COUNT(*)::int AS count FROM (${baseQuery}) AS total_count`;
-    const countRes = await executor.query<{ count: number }>(countQuery, values);
-    const total = countRes.rows[0]?.count ?? 0;
-
-    values.push(safeLimit, offset);
-    const limitIdx = values.length - 1;
-    const offsetIdx = values.length;
-
-    const paginatedQuery = `${baseQuery} ORDER BY created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
-    const res = await executor.query<Medicine>(paginatedQuery, values);
+    const [rows, total] = await Promise.all([
+      executor.medicine.findMany({
+        where,
+        orderBy: { created_at: "desc" },
+        skip: (safePage - 1) * safeLimit,
+        take: safeLimit,
+      }),
+      executor.medicine.count({ where }),
+    ]);
 
     return {
-      medicines: res.rows,
+      medicines: rows.map(toMedicine),
       total,
       page: safePage,
       limit: safeLimit,
     };
   } catch (error) {
-    if (error instanceof AppError) throw error;
     console.error("Error executing getMedicinesService:", error);
     throw AppError.internal("Internal server error while fetching shop inventory");
   }
@@ -90,26 +84,25 @@ export async function getMedicinesService(
 export async function getMedicineByIdService(
   id: string,
   shopId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<Medicine> {
   if (!id?.trim() || !shopId?.trim()) {
     throw AppError.validation("Medicine ID and Shop ID are required");
   }
 
   try {
-    const res = await executor.query<Medicine>(
-      `SELECT * FROM medicines WHERE id = $1 AND shop_id = $2 LIMIT 1`,
-      [id.trim(), shopId.trim()]
-    );
+    const row = await executor.medicine.findFirst({
+      where: { id: id.trim(), shop_id: shopId.trim() },
+    });
 
-    if (res.rows.length === 0) {
+    if (!row) {
       throw AppError.notFound("Medicine not found");
     }
 
-    return res.rows[0];
+    return toMedicine(row);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2023") {
       throw AppError.validation("Invalid Medicine ID format");
     }
     console.error("Error executing getMedicineByIdService:", error);

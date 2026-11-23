@@ -1,10 +1,9 @@
-// services/invoices/invoice-find.service.ts
-import { pool, type DbExecutor } from "@/lib/db/client";
 import { AppError } from "@/lib/api/app-error";
 import { PAGINATION_DEFAULTS } from "@/config/constants";
+import { prisma, type DbExecutor } from "@/lib/db/client";
+import { toInvoice, toInvoiceItem } from "@/lib/db/mappers";
 import type {
   InvoiceFullResponse,
-  InvoiceItem,
   InvoiceListQueryParams,
   InvoiceListResponse,
   InvoiceSummary,
@@ -12,7 +11,7 @@ import type {
 
 export async function getInvoicesService(
   params: InvoiceListQueryParams,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<InvoiceListResponse> {
   const {
     shopId,
@@ -23,57 +22,66 @@ export async function getInvoicesService(
 
   const safePage = Math.max(1, page);
   const safeLimit = Math.min(Math.max(1, limit), PAGINATION_DEFAULTS.MAX_LIMIT);
-  const offset = (safePage - 1) * safeLimit;
+  const searchTerm = search.trim();
+  const where = {
+    shop_id: shopId,
+    ...(searchTerm && {
+      OR: [
+        { invoice_no: { contains: searchTerm, mode: "insensitive" as const } },
+        {
+          buyer: {
+            is: {
+              OR: [
+                { name: { contains: searchTerm, mode: "insensitive" as const } },
+                { phone: { contains: searchTerm, mode: "insensitive" as const } },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+  };
 
-  let baseQuery = `
-    SELECT 
-      i.id,
-      i.shop_id,
-      i.buyer_id,
-      i.invoice_no,
-      i.invoice_date,
-      i.sub_total,
-      i.discount,
-      i.cgst_total,
-      i.sgst_total,
-      i.net_amount,
-      i.payment_mode,
-      i.payment_status,
-      i.doctor_name,
-      i.created_at,
-      b.name AS buyer_name,
-      b.phone AS buyer_phone,
-      b.gstin AS buyer_gstin,
-      COUNT(it.id)::int AS item_count
-    FROM invoices i
-    JOIN buyers b ON i.buyer_id = b.id
-    LEFT JOIN invoice_items it ON i.id = it.invoice_id
-    WHERE i.shop_id = $1
-  `;
+  const [rows, total] = await Promise.all([
+    executor.invoice.findMany({
+      where,
+      include: {
+        buyer: { select: { name: true, phone: true, gstin: true } },
+        _count: { select: { items: true } },
+      },
+      orderBy: { invoice_date: "desc" },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    }),
+    executor.invoice.count({ where }),
+  ]);
 
-  const values: unknown[] = [shopId];
-
-  if (search.trim()) {
-    values.push(`%${search.trim()}%`);
-    const searchParamIdx = values.length;
-    baseQuery += ` AND (i.invoice_no ILIKE $${searchParamIdx} OR b.name ILIKE $${searchParamIdx} OR b.phone ILIKE $${searchParamIdx})`;
-  }
-
-  baseQuery += ` GROUP BY i.id, b.name, b.phone, b.gstin`;
-
-  const countQuery = `SELECT COUNT(*)::int AS count FROM (${baseQuery}) AS total_invoices`;
-  const countRes = await executor.query<{ count: number }>(countQuery, values);
-  const total = countRes.rows[0]?.count ?? 0;
-
-  values.push(safeLimit, offset);
-  const limitIdx = values.length - 1;
-  const offsetIdx = values.length;
-
-  const paginatedQuery = `${baseQuery} ORDER BY i.invoice_date DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
-  const res = await executor.query<InvoiceSummary>(paginatedQuery, values);
+  const invoices: InvoiceSummary[] = rows.map((row) => {
+    const invoice = toInvoice(row);
+    return {
+      id: invoice.id,
+      shop_id: invoice.shop_id,
+      buyer_id: invoice.buyer_id,
+      invoice_no: invoice.invoice_no,
+      invoice_date: invoice.invoice_date,
+      sub_total: invoice.sub_total,
+      discount: invoice.discount,
+      cgst_total: invoice.cgst_total,
+      sgst_total: invoice.sgst_total,
+      net_amount: invoice.net_amount,
+      payment_mode: invoice.payment_mode,
+      payment_status: invoice.payment_status,
+      doctor_name: invoice.doctor_name,
+      created_at: invoice.created_at,
+      buyer_name: row.buyer.name,
+      buyer_phone: row.buyer.phone,
+      buyer_gstin: row.buyer.gstin,
+      item_count: row._count.items,
+    };
+  });
 
   return {
-    invoices: res.rows,
+    invoices,
     total,
     page: safePage,
     limit: safeLimit,
@@ -83,45 +91,33 @@ export async function getInvoicesService(
 export async function getInvoiceDetailsByIdService(
   invoiceId: string,
   shopId: string,
-  executor: DbExecutor = pool
+  executor: DbExecutor = prisma
 ): Promise<InvoiceFullResponse> {
   if (!invoiceId?.trim() || !shopId?.trim()) {
     throw AppError.validation("Invoice ID and Shop ID are required");
   }
 
   try {
-    const invoiceRes = await executor.query<Omit<InvoiceFullResponse, "items">>(
-      `SELECT 
-        i.*,
-        json_build_object(
-          'name', b.name,
-          'phone', b.phone,
-          'email', b.email,
-          'gstin', b.gstin
-        ) AS buyer
-      FROM invoices i
-      JOIN buyers b ON i.buyer_id = b.id
-      WHERE i.id = $1 AND i.shop_id = $2
-      LIMIT 1`,
-      [invoiceId.trim(), shopId.trim()]
-    );
+    const invoice = await executor.invoice.findFirst({
+      where: { id: invoiceId.trim(), shop_id: shopId.trim() },
+      include: {
+        buyer: { select: { name: true, phone: true, email: true, gstin: true } },
+        items: { orderBy: { created_at: "asc" } },
+      },
+    });
 
-    if (invoiceRes.rows.length === 0) {
+    if (!invoice) {
       throw AppError.notFound("Invoice not found");
     }
 
-    const itemsRes = await executor.query<InvoiceItem>(
-      `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at ASC`,
-      [invoiceId.trim()]
-    );
-
     return {
-      ...invoiceRes.rows[0],
-      items: itemsRes.rows,
+      ...toInvoice(invoice),
+      buyer: invoice.buyer,
+      items: invoice.items.map(toInvoiceItem),
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "22P02") {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2023") {
       throw AppError.validation("Invalid Invoice ID format");
     }
     console.error("Error executing getInvoiceDetailsByIdService:", error);
