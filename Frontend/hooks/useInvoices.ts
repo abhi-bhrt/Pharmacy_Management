@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useDebounce } from "./useDebounce";
+import { apiFetch } from "@/lib/api/api";
 
 export interface InvoiceSummaryItem {
   id: string;
@@ -42,7 +43,7 @@ export function useInvoices(limit: number = 15) {
         limit: String(limit),
       });
 
-      const res = await fetch(`/api/protected/invoices?${params.toString()}`, {
+      const res = await apiFetch(`/api/protected/invoices?${params.toString()}`, {
         credentials: "include",
       });
       const data = await res.json().catch(() => null);

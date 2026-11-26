@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { UserProfileResponse, AddressInput } from "@/types";
+import { apiFetch } from "@/lib/api/api";
 
 interface AuthState {
   isAdmin: boolean;
@@ -40,7 +41,7 @@ export const useAuthStore = create<AuthState>()(
         }),
       logout: async () => {
         try {
-          await fetch("/api/auth/signout", { method: "POST" });
+          await apiFetch("/api/auth/signout", { method: "POST" });
         } finally {
           set({
             user: null,

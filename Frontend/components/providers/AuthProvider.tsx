@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { UserProfileResponse } from "@/types";
+import { apiFetch } from "@/lib/api/api";
 
 export default function AuthProvider({
   children,
@@ -23,7 +24,7 @@ export default function AuthProvider({
       }
 
       try {
-        const res = await fetch("/api/protected/users/profile", {
+        const res = await apiFetch("/api/protected/users/profile", {
           method: "GET",
           credentials: "include",
           headers: {

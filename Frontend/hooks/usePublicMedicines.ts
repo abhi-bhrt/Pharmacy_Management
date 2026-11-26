@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useDebounce } from "@/hooks/useDebounce";
+import { apiFetch } from "@/lib/api/api";
 import type { AddressInput, PublicMedicineResponse } from "@/types";
 
 export function usePublicMedicines() {
@@ -75,7 +76,7 @@ export function usePublicMedicines() {
         if (debouncedPincode.trim()) params.set("pincode", debouncedPincode.trim());
         params.set("limit", "20");
 
-        const res = await fetch(`/api/medicines?${params.toString()}`);
+        const res = await apiFetch(`/api/medicines?${params.toString()}`);
         const data = await res.json();
 
         if (isMounted) {

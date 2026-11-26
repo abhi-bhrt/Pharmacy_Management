@@ -1,5 +1,6 @@
 // lib/api/api-client.ts
 import type { ApiResponse } from "@/types";
+import { apiFetch } from "@/lib/api/api";
 
 export class ApiClientError extends Error {
   public readonly statusCode: number;
@@ -36,8 +37,7 @@ export async function apiClient<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(endpoint, {
-    credentials: "include",
+  const response = await apiFetch(endpoint, {
     ...options,
     headers,
   });

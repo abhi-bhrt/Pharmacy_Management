@@ -7,6 +7,7 @@ import Link from "next/link";
 import { AlertCircle, Loader2, ChevronDown, MapPin, ArrowRight, ShieldCheck } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { BRAND_CONFIG } from "@/config/brand";
+import { apiFetch } from "@/lib/api/api";
 import type { CreateUserInput } from "@/types";
 
 export default function SignupPage() {
@@ -63,7 +64,7 @@ export default function SignupPage() {
           : undefined,
       };
 
-      const res = await fetch("/api/auth/signup", {
+      const res = await apiFetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

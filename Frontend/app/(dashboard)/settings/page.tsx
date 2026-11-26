@@ -6,6 +6,7 @@ import { ShopSettingsForm } from "@/components/features/shop/ShopSettingsForm";
 import { Spinner } from "@/components/ui/Spinner";
 import { Store, ShieldCheck } from "lucide-react";
 import { BRAND_CONFIG } from "@/config/brand";
+import { apiFetch } from "@/lib/api/api";
 
 export default function ProfilePage() {
   const { name: brandName } = BRAND_CONFIG;
@@ -17,7 +18,7 @@ export default function ProfilePage() {
 
     async function fetchShop() {
       try {
-        const res = await fetch("/api/protected/shops", { credentials: "include" });
+        const res = await apiFetch("/api/protected/shops");
         const data = await res.json();
         if (isMounted) {
           if (res.ok && data?.success) {

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Lock, Mail, AlertCircle, Loader2, ArrowRight, ShieldCheck } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { BRAND_CONFIG } from "@/config/brand";
+import { apiFetch } from "@/lib/api/api";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function SignInPage() {
     };
 
     try {
-      const res = await fetch("/api/auth/signin", {
+      const res = await apiFetch("/api/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

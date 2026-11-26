@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useDebounce } from "@/hooks/useDebounce";
+import { apiFetch } from "@/lib/api/api";
 import type { AddressInput, ShopResponse } from "@/types";
 
 export function usePublicShops() {
@@ -74,7 +75,7 @@ export function usePublicShops() {
         if (debouncedCity.trim()) params.set("city", debouncedCity.trim());
         if (debouncedPincode.trim()) params.set("pincode", debouncedPincode.trim());
 
-        const res = await fetch(`/api/shops?${params.toString()}`);
+        const res = await apiFetch(`/api/shops?${params.toString()}`);
         const data = await res.json();
 
         if (isMounted) {

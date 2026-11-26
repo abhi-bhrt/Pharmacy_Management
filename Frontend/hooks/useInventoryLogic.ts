@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useMedicines } from "@/hooks/useMedicines";
 import { useConfirm } from "@/components/providers/ConfirmProvider";
+import { apiFetch } from "@/lib/api/api";
 import type { MedicineItem } from "@/types";
 import type { ExtractedMedicineItem } from "@/components/features/inventory/ImageUploadModal";
 
@@ -69,7 +70,7 @@ export function useInventoryLogic() {
 
     try {
       for (const item of items) {
-        const res = await fetch("/api/protected/medicines", {
+        const res = await apiFetch("/api/protected/medicines", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -136,7 +137,7 @@ export function useInventoryLogic() {
 
     setError("");
     try {
-      const res = await fetch(`/api/protected/medicines/${id}`, {
+      const res = await apiFetch(`/api/protected/medicines/${id}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -165,7 +166,7 @@ export function useInventoryLogic() {
     const method = editingMed ? "PATCH" : "POST";
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         credentials: "include",
         headers: { "Content-Type": "application/json" },

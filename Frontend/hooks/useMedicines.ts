@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useDebounce } from "./useDebounce";
+import { apiFetch } from "@/lib/api/api";
 import type { MedicineItem } from "@/types";
 
 export type { MedicineItem };
@@ -33,7 +34,7 @@ export function useMedicines(limit: number = 15) {
         limit: String(limit),
       });
 
-      const res = await fetch(`/api/protected/medicines?${params.toString()}`, {
+      const res = await apiFetch(`/api/protected/medicines?${params.toString()}`, {
         credentials: "include",
       });
       const data = await res.json();

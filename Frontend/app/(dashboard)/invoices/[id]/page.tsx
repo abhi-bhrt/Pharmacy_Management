@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { InvoiceReceipt } from "@/components/features/invoices/InvoiceReceipt";
 import { Spinner } from "@/components/ui/Spinner";
+import { apiFetch } from "@/lib/api/api";
 
 function InvoiceDetailContent() {
   const params = useParams();
@@ -20,8 +21,8 @@ function InvoiceDetailContent() {
     async function fetchDetails() {
       try {
         const [invRes, shopRes] = await Promise.all([
-          fetch(`/api/protected/invoices/${id}`, { credentials: "include" }),
-          fetch(`/api/protected/shops`, { credentials: "include" }),
+          apiFetch(`/api/protected/invoices/${id}`),
+          apiFetch("/api/protected/shops"),
         ]);
 
         const [invData, shopData] = await Promise.all([

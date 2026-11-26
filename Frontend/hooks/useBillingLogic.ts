@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useMedicines } from "@/hooks/useMedicines";
+import { apiFetch } from "@/lib/api/api";
 
 export interface CartItem {
   medicineId: string;
@@ -82,7 +83,7 @@ export function useBillingLogic() {
     if (billingType === "B2B" && b2bInputMode === "search" && query.length > 0) {
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(`/api/shops/search?shopName=${encodeURIComponent(query)}`, {
+          const res = await apiFetch(`/api/shops/search?shopName=${encodeURIComponent(query)}`, {
             credentials: "include",
           });
           const data = await res.json().catch(() => null);
@@ -92,7 +93,7 @@ export function useBillingLogic() {
           if (data?.success && Array.isArray(data.data?.shops) && data.data.shops.length > 0) {
             setShopSearchResults(data.data.shops);
           } else {
-            const resGstin = await fetch(`/api/shops/search?gstin=${encodeURIComponent(query)}`, {
+            const resGstin = await apiFetch(`/api/shops/search?gstin=${encodeURIComponent(query)}`, {
               credentials: "include",
             });
             const dataGstin = await resGstin.json().catch(() => null);
@@ -239,7 +240,7 @@ export function useBillingLogic() {
         payload.buyerShopId = selectedShopId;
       }
 
-      const res = await fetch("/api/protected/invoices", {
+      const res = await apiFetch("/api/protected/invoices", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

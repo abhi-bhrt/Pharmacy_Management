@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { BRAND_CONFIG } from "@/config/brand";
+import { apiFetch } from "@/lib/api/api";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -114,7 +115,7 @@ export default function UserProfilePage() {
           : undefined,
       };
 
-      const res = await fetch("/api/protected/users/profile", {
+      const res = await apiFetch("/api/protected/users/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -8,6 +8,7 @@ import { CheckCircle2, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MapLocationPicker } from "@/components/providers/MapLocationPicker";
 import { BRAND_CONFIG } from "@/config/brand";
+import { apiFetch } from "@/lib/api/api";
 
 interface ShopSettingsFormProps {
   initialShop?: Record<string, any> | null;
@@ -62,7 +63,7 @@ export function ShopSettingsForm({ initialShop }: ShopSettingsFormProps) {
         },
       };
 
-      const res = await fetch("/api/protected/shops", {
+      const res = await apiFetch("/api/protected/shops", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

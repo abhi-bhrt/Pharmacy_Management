@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { InvoiceReceipt } from "@/components/features/invoices/InvoiceReceipt";
 import { Spinner } from "@/components/ui/Spinner";
+import { apiFetch } from "@/lib/api/api";
 
 function PublicInvoiceDetailContent() {
   const params = useParams();
@@ -20,7 +21,7 @@ function PublicInvoiceDetailContent() {
 
     async function fetchPublicInvoice() {
       try {
-        const res = await fetch(`/api/invoices/${id}`);
+        const res = await apiFetch(`/api/invoices/${id}`);
         const data = await res.json().catch(() => null);
 
         if (!isMounted) return;
