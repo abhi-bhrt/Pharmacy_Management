@@ -4,8 +4,7 @@ import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth/jwt.util";
 import { env } from "@/config/env";
 import {
-  AUTH_COOKIE_NAME,
-  EXTERNAL_API_ROUTING_HEADER,
+  AUTH_COOKIE_NAME, EXTERNAL_API_ROUTING_HEADER,
 } from "@/config/constants";
 import type { ApiResponse } from "@/types";
 
