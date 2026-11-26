@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Address {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pincode    String   @db.VarChar(20)
+  state      String   @db.VarChar(100)
+  country    String   @default("IN") @db.VarChar(100)
+  district   String   @db.VarChar(100)
+  area       String   @db.VarChar(255)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  users  User[]
+  shops  Shop[]
+  buyers Buyer[]
+
+  @@map("addresses")
+}
+
+model User {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String   @db.VarChar(255)
+  email               String   @unique @db.VarChar(255)
+  mob_no              String   @unique @db.VarChar(50)
+  password            String   @db.VarChar(255)
+  role                String   @default("CUSTOMER") @db.VarChar(50)
+  status              String   @default("ACTIVE") @db.VarChar(50)
+  is_profile_complete Boolean  @default(false)
+  address_id          String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  address Address? @relation(fields: [address_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  shops   Shop[]
+  buyers  Buyer[]
+
+  @@map("users")
+}
+
+model Shop {
+  id                             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shop_name                      String   @db.VarChar(255)
+  phone                          String   @db.VarChar(50)
+  email                          String   @db.VarChar(255)
+  drug_licence_number            String   @db.VarChar(100)
+  pharmacist_name                String   @db.VarChar(255)
+  pharmacist_registration_number String   @db.VarChar(100)
+  gstin                          String   @db.VarChar(100)
+  location                       String?  @db.VarChar(255)
+  owner_id                       String   @db.Uuid
+  address_id                     String   @db.Uuid
+  image_id                       String?  @db.VarChar(255)
+  created_at                     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  owner     User       @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  address   Address    @relation(fields: [address_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicines Medicine[]
+  invoices  Invoice[]
+
+  @@map("shops")
+}
+
+model Medicine {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shop_id    String   @db.Uuid
+  description String  @db.VarChar(255)
+  batch_no   String   @db.VarChar(100)
+  mrp        Decimal  @db.Decimal(10, 2)
+  rate       Decimal  @db.Decimal(10, 2)
+  gst_rate   Decimal  @db.Decimal(5, 2)
+  exp_date   String   @db.VarChar(50)
+  quantity   Int
+  hsn_code   String   @db.VarChar(100)
+  pack_size  String   @db.VarChar(50)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  shop         Shop          @relation(fields: [shop_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoiceItems InvoiceItem[]
+
+  @@map("medicines")
+}
+
+model Buyer {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String   @db.VarChar(255)
+  phone               String   @db.VarChar(50)
+  email               String?  @db.VarChar(255)
+  gstin               String?  @db.VarChar(100)
+  drug_licence_number String?  @db.VarChar(100)
+  is_b2b              Boolean  @default(false)
+  user_id             String?  @db.Uuid
+  address_id          String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user     User?     @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  address  Address?  @relation(fields: [address_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  invoices Invoice[]
+
+  @@map("buyers")
+}
+
+model Invoice {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shop_id        String   @db.Uuid
+  buyer_id       String   @db.Uuid
+  invoice_no     String   @db.VarChar(100)
+  invoice_date   DateTime @default(now()) @db.Timestamptz(6)
+  sub_total      Decimal  @db.Decimal(12, 2)
+  discount       Decimal  @default(0) @db.Decimal(12, 2)
+  cgst_total     Decimal  @db.Decimal(12, 2)
+  sgst_total     Decimal  @db.Decimal(12, 2)
+  net_amount     Decimal  @db.Decimal(12, 2)
+  payment_mode   String   @db.VarChar(50)
+  payment_status String   @db.VarChar(50)
+  doctor_name    String?  @db.VarChar(255)
+  doctor_reg_no  String?  @db.VarChar(100)
+  note           String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  shop  Shop          @relation(fields: [shop_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer Buyer         @relation(fields: [buyer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items InvoiceItem[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoice_id      String   @db.Uuid
+  medicine_id     String?  @db.Uuid
+  description     String   @db.VarChar(255)
+  batch_no        String   @db.VarChar(100)
+  exp_date        String   @db.VarChar(50)
+  hsn_code        String   @db.VarChar(100)
+  pack_size       String   @db.VarChar(50)
+  quantity        Int
+  free_quantity   Int      @default(0)
+  mrp             Decimal  @db.Decimal(10, 2)
+  rate            Decimal  @db.Decimal(10, 2)
+  gst_rate        Decimal  @db.Decimal(5, 2)
+  taxable_amount  Decimal  @db.Decimal(12, 2)
+  cgst_amount     Decimal  @db.Decimal(12, 2)
+  sgst_amount     Decimal  @db.Decimal(12, 2)
+  total_amount    Decimal  @db.Decimal(12, 2)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  invoice  Invoice   @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicine Medicine? @relation(fields: [medicine_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@map("invoice_items")
+}
