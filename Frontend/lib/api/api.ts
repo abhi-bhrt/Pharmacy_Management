@@ -1,4 +1,4 @@
-const EXTERNAL_API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://pharmacy-management-f12c.onrender.com").replace(/\/+$/, "");
+const EXTERNAL_API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://pharmacy-management-x6ts.onrender.com").replace(/\/+$/, "");
 
 
 const FALLBACK_API_BASE = "";
