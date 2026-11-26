@@ -2,6 +2,7 @@
  * Centralized Environment Configuration.
  * Never access `process.env` directly outside of this file.
  */
+import { DEFAULT_API_BASE_URL } from "./constants";
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key];
@@ -29,6 +30,9 @@ export const env = {
   },
   get JWT_SECRET() {
     return getRequiredEnv("JWT_SECRET");
+  },
+  get EXTERNAL_API_BASE_URL() {
+    return (process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_BASE_URL).replace(/\/+$/, "");
   },
 
   // Upstash Redis (Optional in development)

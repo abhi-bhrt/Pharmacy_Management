@@ -31,6 +31,7 @@ The codebase enforces a strict **4-Layer Separation of Concerns**:
 3. **API & Middleware Layer (`/app/api`, `middleware.ts`)**
    - Edge `middleware.ts` guards protected pages and API endpoints using JWT cookie verification and rate limiting.
    - Route handlers validate incoming payloads, call the appropriate Service method, and return standardized JSON responses via `withApiHandler`.
+   - Browser API calls stay same-origin; middleware proxies them to the external API while healthy and uses local route handlers when it is unavailable. The Backend and Frontend must share `JWT_SECRET` for sessions to work in both modes.
 
 4. **Business Logic & Data Access Layer (`/services`, `/lib/db`)**
    - Domain services encapsulate Prisma queries, transactional integrity (e.g., deducting stock upon invoice creation), and domain rules.
